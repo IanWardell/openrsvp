@@ -31,17 +31,9 @@ web/build/
 .DS_Store
 Thumbs.db
 
-# Claude
-.claude/
-
 # Playwright
 web/test-results/
 web/playwright-report/
 
 # Temp
 tmp/
-.gstack/
-
-# Worktrees
-.worktrees/
-.worktrees/
