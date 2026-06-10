@@ -31,8 +31,8 @@ func newFakeProvider(ch notification.Channel) *fakeProvider {
 	return &fakeProvider{channel: ch}
 }
 
-func (p *fakeProvider) Name() string                      { return "fake-" + string(p.channel) }
-func (p *fakeProvider) Channel() notification.Channel     { return p.channel }
+func (p *fakeProvider) Name() string                          { return "fake-" + string(p.channel) }
+func (p *fakeProvider) Channel() notification.Channel         { return p.channel }
 func (p *fakeProvider) HealthCheck(ctx context.Context) error { return nil }
 
 func (p *fakeProvider) Send(ctx context.Context, msg *notification.Message) (*notification.SendResult, error) {
@@ -69,12 +69,12 @@ func (p *fakeProvider) recipients() []string {
 
 // reminderTestEnv bundles everything a reminder job test needs.
 type reminderTestEnv struct {
-	db       database.DB
-	store    *ReminderStore
-	job      *ReminderJob
-	eventID  string
-	email    *fakeProvider
-	sms      *fakeProvider
+	db      database.DB
+	store   *ReminderStore
+	job     *ReminderJob
+	eventID string
+	email   *fakeProvider
+	sms     *fakeProvider
 }
 
 // setupReminderJob builds a test DB with an organizer + event, a notification

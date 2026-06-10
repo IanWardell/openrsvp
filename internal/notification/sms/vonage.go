@@ -58,8 +58,8 @@ type vonageRequest struct {
 
 // vonageResponse is the JSON response from the Vonage SMS API.
 type vonageResponse struct {
-	MessageCount string           `json:"message-count"`
-	Messages     []vonageMessage  `json:"messages"`
+	MessageCount string          `json:"message-count"`
+	Messages     []vonageMessage `json:"messages"`
 }
 
 // vonageMessage represents a single message result in the Vonage response.

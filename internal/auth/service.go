@@ -28,10 +28,10 @@ type EmailSender func(ctx context.Context, to, subject, htmlBody, plainBody stri
 
 // Service implements the authentication business logic.
 type Service struct {
-	store       *Store
-	cfg         *config.Config
-	logger      zerolog.Logger
-	sendEmail   EmailSender
+	store     *Store
+	cfg       *config.Config
+	logger    zerolog.Logger
+	sendEmail EmailSender
 }
 
 // NewService creates a new auth Service.

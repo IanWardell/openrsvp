@@ -10,15 +10,19 @@ A self-hosted, privacy-first alternative to Evite. Create beautiful event invita
 - 📬 **Notifications** — Pluggable email (SMTP, SendGrid, SES) and SMS (Twilio, Vonage, SNS) providers
 - 💬 **Messaging** — Two-way communication between organizers and attendees
 - ⏰ **Scheduled Reminders** — Automatic event reminders to guests
-- 📝 **Guestbook** — Attendees can leave comments on event pages with organizer moderation
+- 📝 **Guestbook** — Attendees can leave comments on event pages, delete their own, with organizer moderation
 - 📥 **CSV Import** — Bulk import guest lists from CSV files with validation and duplicate detection
 - 🔗 **Webhooks** — Real-time HTTP callbacks for RSVP and event lifecycle events with HMAC signing
-- 📊 **Email Tracking** — Delivery status, open tracking, and per-event email statistics
+- 📊 **Email Tracking** — Delivery status, open tracking, bounce/complaint handling, and per-event email statistics
+- ✉️ **Unsubscribe & Suppression** — One-click unsubscribe footer on reminder/message emails, with a suppression list that skips opted-out addresses
+- 🗣️ **Guest Feedback** — A "Report a problem" widget on public RSVP pages lets guests flag issues without logging in
+- 🧭 **Setup Wizard** — First-run wizard for instance name, default timezone, sign-up policy, and support email
+- 📦 **Data Export & Account Deletion** — Organizers can export all their data and permanently delete their account from an Account settings page
 - 🛡️ **Privacy by Design** — Data auto-deletes after a configurable retention period (default 30 days post-event)
 - 🤖 **Bot Protection** — Honeypot fields and IP-based rate limiting
 - 📈 **Instance Admin** — Aggregate dashboard for instance-wide statistics (events, guests, RSVP rates, notification health, feature adoption) — privacy-first, no individual tracking
 - 🏠 **Self-Hosted** — Single Docker container, you own your data
-- 🗄️ **SQLite or PostgreSQL** — SQLite by default, PostgreSQL for larger deployments
+- 🗄️ **SQLite** — SQLite by default and the only supported database today. PostgreSQL support is experimental and not functional in this release (see [Known limitations](#known-limitations))
 
 ## 🚀 Quick Start
 
@@ -39,7 +43,9 @@ cp .env.example .env
 docker compose up -d
 ```
 
-### With PostgreSQL
+### With PostgreSQL (experimental)
+
+> **Heads up:** PostgreSQL support is experimental and not functional in this release. Use SQLite for production. See [Known limitations](#known-limitations).
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
@@ -199,6 +205,8 @@ All API endpoints are under `/api/v1`. The server also provides:
 | POST | `/api/v1/auth/verify` | Verify magic link token |
 | POST | `/api/v1/auth/logout` | Logout |
 | GET | `/api/v1/auth/me` | Get current user |
+| GET | `/api/v1/auth/me/export` | Export all your data |
+| DELETE | `/api/v1/auth/me` | Delete account and all associated data |
 
 ### 📅 Events
 
@@ -296,6 +304,27 @@ All API endpoints are under `/api/v1`. The server also provides:
 | GET | `/api/v1/notifications/track/open/:logId` | Tracking pixel (public) |
 | GET | `/api/v1/notifications/event/:eventId/stats` | Email delivery stats (organizer) |
 | GET | `/api/v1/notifications/event/:eventId` | Delivery log (organizer) |
+| POST | `/api/v1/notifications/webhooks/sendgrid` | Inbound SendGrid delivery events (public) |
+| POST | `/api/v1/notifications/webhooks/ses` | Inbound SES delivery events (public) |
+
+Open tracking is gated by `EMAIL_OPEN_TRACKING_ENABLED`. The inbound delivery webhooks record bounces and complaints; provider signature verification is a tracked follow-up (see [Known limitations](#known-limitations)).
+
+### ✉️ Unsubscribe
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/unsubscribe?token=…` | Resolve an unsubscribe token (public) |
+| POST | `/api/v1/unsubscribe` | Confirm unsubscribe — adds the address to the suppression list (public) |
+
+### 🧭 Setup
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/setup/status` | Whether the instance has been configured (public) |
+| GET | `/api/v1/setup/config` | Read non-secret instance settings (admin) |
+| POST | `/api/v1/setup/config` | Update non-secret instance settings (admin) |
+
+Non-secret instance settings (instance name, default timezone, allow-signups, support email) are stored in the database and overlaid on the environment config at startup. Secrets remain environment-only.
 
 ## 🏠 Self-Hosting Guide
 
@@ -396,18 +425,52 @@ For PostgreSQL, use `pg_dump`:
 docker compose exec postgres pg_dump -U openrsvp openrsvp > backup.sql
 ```
 
+### ⚠️ Known limitations
+
+**PostgreSQL is experimental and not functional in this release.** The data stores use `?` SQL placeholders with no rewrite layer, and transactional paths use raw `*sql.Tx`. `lib/pq` expects `$1, $2, …` placeholders, so queries fail under Postgres. **SQLite is the supported and tested database.** A Postgres compatibility fix (placeholder rewriting plus the transactional paths) is tracked as a follow-up. The PostgreSQL configuration and docs are kept here for that work; do not run Postgres in production yet.
+
+**Inbound delivery webhooks are unauthenticated.** The SendGrid/SES delivery webhooks record bounces and complaints but do not yet verify provider signatures. Restrict access at the reverse proxy if you expose them. Signature verification is a tracked follow-up.
+
+### 🔑 Operator note: rotate pre-v1.5.1 Postgres credentials
+
+If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Postgres password and confirm the Postgres port binds to `127.0.0.1` only. The old file shipped default `openrsvp:openrsvp` credentials and exposed the port on all interfaces; both were fixed in v1.5.1 (credentials now come from `.env`, port bound to localhost).
+
 ## 🧰 Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | Backend | Go with chi router |
 | Frontend | SvelteKit + Tailwind CSS |
-| Database | SQLite (default) / PostgreSQL |
+| Database | SQLite (supported) / PostgreSQL (experimental, not functional) |
 | Auth | Magic links (passwordless) |
 | Notifications | SMTP, SendGrid, SES, Twilio, Vonage, SNS |
 | Deployment | Docker (multi-stage, single binary) |
 
 ## 📝 Changelog
+
+### v1.6.0 (2026-06-10)
+
+**Security:**
+- Pin all GitHub Actions to commit SHAs; add least-privilege `permissions: contents: read` to `ci.yml`
+- CSRF: authenticated requests now require a session-bound (HMAC) token, the token cookie is rebound at/after login, and the `/api/v1/auth/` CSRF exclusion is narrowed to the pre-auth magic-link/verify endpoints only, so `PATCH /auth/me` and `POST /auth/logout` are now CSRF-protected
+- Webhooks: delivery URLs must be `https://` in production (`http://` allowed only in development)
+- Web app: the session token no longer lives in `localStorage`; the SPA authenticates via the existing HttpOnly `session` cookie (Bearer is still accepted server-side for API/CLI clients). The magic-link token is stripped from browser history after use
+- Repo hygiene: tooling directories moved into a tracked `.gitignore`, vendored e2e `node_modules` untracked, `.dockerignore` tightened
+
+**Features:**
+- Email delivery tracking is now functional. An open-tracking pixel is embedded in HTML emails (gated by `EMAIL_OPEN_TRACKING_ENABLED`), inbound SendGrid/SES delivery webhooks (`POST /api/v1/notifications/webhooks/sendgrid|ses`) record bounces and complaints, and the stats dashboard shows real numbers instead of always-zero. Provider webhook signature verification is a documented follow-up
+- Email unsubscribe and suppression list. Reminder and message emails carry an unsubscribe footer, a public token-based unsubscribe page lives at `/unsubscribe`, and suppressed addresses are skipped before sending. Migration 000030
+- Account deletion and data export. Organizers can export all their data (`GET /api/v1/auth/me/export`) and permanently delete their account and all associated data (`DELETE /api/v1/auth/me`) from a new Account settings page (`/account`)
+- Setup wizard. DB-backed non-secret instance settings (instance name, default timezone, allow-signups, support email) via `/setup`, stored in `instance_config` (migration 000031) and overlaid on the environment config at startup. Secrets remain environment-only
+- Guest comment deletion. Guests can delete their own guestbook comments
+- Guest feedback. A "Report a problem" widget on public RSVP pages lets guests submit feedback without logging in
+
+**Tests & CI:**
+- Large test-coverage increase (overall ~51% to ~61%): webhook dispatcher/HMAC/SSRF, the reminder pipeline plus its double-send lock, all email/SMS providers including SMTP header-injection defense, and an end-to-end server `httptest` suite
+- CI gained coverage reporting, a `govulncheck` job, a `golangci-lint` job (plus `.golangci.yml`), and a Go 1.24/1.25 matrix
+
+**Known limitations:**
+- PostgreSQL support is experimental and not functional in this release. The stores use `?` SQL placeholders with no rewrite layer (and transactional paths use raw `*sql.Tx`), while `lib/pq` requires `$1, $2, …`, so queries fail under Postgres. SQLite is the supported and tested database; a Postgres compatibility fix is tracked as a follow-up
 
 ### v1.5.2 (2026-05-29)
 
