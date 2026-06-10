@@ -19,15 +19,18 @@ const maxWebhooksPerEvent = 10
 
 // Service contains the business logic for webhook management.
 type Service struct {
-	store  *Store
-	logger zerolog.Logger
+	store        *Store
+	logger       zerolog.Logger
+	requireHTTPS bool
 }
 
-// NewService creates a new webhook Service.
-func NewService(store *Store, logger zerolog.Logger) *Service {
+// NewService creates a new webhook Service. When requireHTTPS is true
+// (production), webhook delivery URLs must use https://; http:// is rejected.
+func NewService(store *Store, logger zerolog.Logger, requireHTTPS bool) *Service {
 	return &Service{
-		store:  store,
-		logger: logger,
+		store:        store,
+		logger:       logger,
+		requireHTTPS: requireHTTPS,
 	}
 }
 
@@ -35,7 +38,10 @@ func NewService(store *Store, logger zerolog.Logger) *Service {
 func (s *Service) CreateWebhook(ctx context.Context, eventID string, req CreateWebhookRequest) (*WebhookWithSecret, error) {
 	// Validate URL.
 	url := strings.TrimSpace(req.URL)
-	if !isValidWebhookURL(url) {
+	if !isValidWebhookURL(url, s.requireHTTPS) {
+		if s.requireHTTPS {
+			return nil, fmt.Errorf("invalid webhook URL: must be an https:// URL")
+		}
 		return nil, fmt.Errorf("invalid webhook URL: must be an http:// or https:// URL")
 	}
 
@@ -122,7 +128,10 @@ func (s *Service) UpdateWebhook(ctx context.Context, id string, req UpdateWebhoo
 
 	if req.URL != nil {
 		url := strings.TrimSpace(*req.URL)
-		if !isValidWebhookURL(url) {
+		if !isValidWebhookURL(url, s.requireHTTPS) {
+			if s.requireHTTPS {
+				return nil, fmt.Errorf("invalid webhook URL: must be an https:// URL")
+			}
 			return nil, fmt.Errorf("invalid webhook URL: must be an http:// or https:// URL")
 		}
 		w.URL = url

@@ -308,14 +308,13 @@ func isPrivateIP(ip net.IP) bool {
 }
 
 // isValidWebhookURL performs basic validation that a URL is suitable for
-// webhook delivery (HTTPS required, no IP-literal hosts in production).
-func isValidWebhookURL(rawURL string) bool {
+// webhook delivery. When requireHTTPS is true (production), only https:// URLs
+// are accepted; http:// is rejected to avoid cleartext delivery of signed
+// PII-bearing payloads. When false (development), http:// is also allowed so
+// localhost testing still works. SSRF private-IP blocking happens separately
+// at dial time in ssrfSafeDialer.
+func isValidWebhookURL(rawURL string, requireHTTPS bool) bool {
 	if rawURL == "" {
-		return false
-	}
-
-	// Must start with https:// (or http:// for local development).
-	if !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://") {
 		return false
 	}
 
@@ -324,5 +323,14 @@ func isValidWebhookURL(rawURL string) bool {
 		return false
 	}
 
-	return true
+	if strings.HasPrefix(rawURL, "https://") {
+		return true
+	}
+
+	// http:// is only permitted in development.
+	if strings.HasPrefix(rawURL, "http://") {
+		return !requireHTTPS
+	}
+
+	return false
 }

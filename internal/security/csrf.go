@@ -55,33 +55,88 @@ func buildCSRFToken(sessionValue string) (string, error) {
 	return nonce + "." + computeCSRFHMAC(nonce, sessionValue), nil
 }
 
+// isSessionBoundToken reports whether a CSRF token is in the session-bound
+// "nonce.hmac" form (i.e. it contains a dot).
+func isSessionBoundToken(token string) bool {
+	return strings.IndexByte(token, '.') > 0
+}
+
 // verifyCSRFToken validates a CSRF token against the session value.
-// For session-bound tokens (containing "."), the HMAC is recomputed and
-// compared.  For plain tokens (no session), the cookie and header values
-// are compared directly.
+//
+//   - The header and cookie must always match exactly (double-submit).
+//   - When a session is present (authenticated request) the token MUST be
+//     session-bound ("nonce.hmac") and the HMAC must validate against the
+//     current session value.  Plain, dot-less tokens are rejected so that a
+//     token minted before login cannot be replayed after authentication.
+//   - When no session is present (pre-login flows) a plain double-submit
+//     token is accepted.
 func verifyCSRFToken(cookieToken, headerToken, sessionValue string) bool {
 	// The header and cookie must match exactly first.
 	if subtle.ConstantTimeCompare([]byte(cookieToken), []byte(headerToken)) != 1 {
 		return false
 	}
 
-	// If the token contains a dot, it is session-bound.
-	if idx := strings.IndexByte(cookieToken, '.'); idx > 0 {
-		nonce := cookieToken[:idx]
-		providedMAC := cookieToken[idx+1:]
-
-		// Session-bound tokens require a session.
-		if sessionValue == "" {
+	// Authenticated requests require a session-bound token.
+	if sessionValue != "" {
+		idx := strings.IndexByte(cookieToken, '.')
+		if idx <= 0 {
+			// Plain (dot-less) token is not bound to this session — reject.
 			return false
 		}
-
+		nonce := cookieToken[:idx]
+		providedMAC := cookieToken[idx+1:]
 		expectedMAC := computeCSRFHMAC(nonce, sessionValue)
 		return subtle.ConstantTimeCompare([]byte(providedMAC), []byte(expectedMAC)) == 1
 	}
 
-	// Plain token (no session when it was issued) — accept as-is.
-	// This allows unauthenticated flows (login page) to work.
+	// Unauthenticated request.  A session-bound token cannot be validated
+	// without a session, so reject it; a plain token is accepted as-is.
+	if isSessionBoundToken(cookieToken) {
+		return false
+	}
 	return true
+}
+
+// isBoundToSession reports whether a session-bound token's HMAC validates
+// against the given session value.
+func isBoundToSession(token, sessionValue string) bool {
+	if sessionValue == "" {
+		return false
+	}
+	idx := strings.IndexByte(token, '.')
+	if idx <= 0 {
+		return false
+	}
+	expectedMAC := computeCSRFHMAC(token[:idx], sessionValue)
+	return subtle.ConstantTimeCompare([]byte(token[idx+1:]), []byte(expectedMAC)) == 1
+}
+
+// needsCSRFRebind reports whether a fresh csrf_token cookie should be issued on
+// a safe request.  A cookie is (re)issued when it is absent, or when an
+// authenticated request carries a token that is not bound to the current
+// session (e.g. a pre-login plain token persisting after login).
+func needsCSRFRebind(r *http.Request, sessionValue string) bool {
+	cookie, err := r.Cookie("csrf_token")
+	if err != nil {
+		return true
+	}
+	if sessionValue != "" && !isBoundToSession(cookie.Value, sessionValue) {
+		return true
+	}
+	return false
+}
+
+// setCSRFCookie writes the csrf_token cookie. It is readable by JavaScript so
+// the SPA can echo it back in the X-CSRF-Token header.
+func setCSRFCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "csrf_token",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: false, // JS needs to read the cookie
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+	})
 }
 
 // CSRFMiddleware returns middleware that implements the Synchronizer Token
@@ -123,23 +178,18 @@ func CSRFMiddleware(excludePaths []string) func(http.Handler) http.Handler {
 
 			switch r.Method {
 			case http.MethodGet, http.MethodHead, http.MethodOptions:
-				// Only set a new CSRF cookie if one doesn't already exist.
-				// This avoids unnecessary token regeneration on every GET.
-				if _, err := r.Cookie("csrf_token"); err != nil {
+				// Set a CSRF cookie when one is absent, or re-mint it when the
+				// existing cookie is not correctly bound to the current session.
+				// The latter handles the post-login transition: a token minted
+				// before authentication (plain, dot-less) must be replaced with
+				// a session-bound token so subsequent mutations validate.
+				if needsCSRFRebind(r, sessionValue) {
 					token, genErr := buildCSRFToken(sessionValue)
 					if genErr != nil {
 						http.Error(w, "internal server error", http.StatusInternalServerError)
 						return
 					}
-
-					http.SetCookie(w, &http.Cookie{
-						Name:     "csrf_token",
-						Value:    token,
-						Path:     "/",
-						HttpOnly: false, // JS needs to read the cookie
-						Secure:   isSecureRequest(r),
-						SameSite: http.SameSiteStrictMode,
-					})
+					setCSRFCookie(w, r, token)
 				}
 
 				next.ServeHTTP(w, r)
@@ -159,6 +209,14 @@ func CSRFMiddleware(excludePaths []string) func(http.Handler) http.Handler {
 				}
 
 				if !verifyCSRFToken(cookie.Value, headerToken, sessionValue) {
+					// If the request is authenticated but the cookie is not yet
+					// session-bound, mint a fresh bound token so the client's
+					// next request can succeed (the post-login transition).
+					if sessionValue != "" && !isBoundToSession(cookie.Value, sessionValue) {
+						if token, genErr := buildCSRFToken(sessionValue); genErr == nil {
+							setCSRFCookie(w, r, token)
+						}
+					}
 					csrfError(w)
 					return
 				}

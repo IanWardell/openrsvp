@@ -6,11 +6,6 @@
 	import Toast from '$lib/components/ui/Toast.svelte';
 
 	onMount(async () => {
-		if (!api.getToken()) {
-			$currentUser = null;
-			$isLoading = false;
-			return;
-		}
 		try {
 			const user = await api.get<import('$lib/types').Organizer>('/auth/me');
 			$currentUser = user;
@@ -25,7 +20,6 @@
 				}
 			}
 		} catch {
-			api.setToken('');
 			$currentUser = null;
 		} finally {
 			$isLoading = false;

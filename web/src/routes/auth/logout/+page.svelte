@@ -11,7 +11,6 @@
 		} catch {
 			// Ignore errors on logout
 		} finally {
-			api.setToken('');
 			$currentUser = null;
 			goto('/');
 		}

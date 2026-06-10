@@ -233,7 +233,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 
 	// Wire up webhook layer.
 	webhookStore := webhook.NewStore(db)
-	webhookService := webhook.NewService(webhookStore, logger)
+	webhookService := webhook.NewService(webhookStore, logger, !cfg.IsDevelopment())
 	webhookDispatcher := webhook.NewDispatcher(webhookStore, logger)
 	webhookHandler := webhook.NewHandler(webhookService, webhookDispatcher, authMiddleware, webhook.OrganizerFromCtx(organizerFromCtx), webhook.EventOwnershipChecker(checkEventOwner), logger)
 
@@ -538,7 +538,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		RSVPRateLimit:    30,
 		GeneralRateLimit: 200,
 		RateWindow:       1 * time.Minute,
-		CSRFExcludePaths: []string{"/api/v1/rsvp/public/", "/api/v1/auth/", "/api/v1/comments/public/"},
+		CSRFExcludePaths: []string{"/api/v1/rsvp/public/", "/api/v1/auth/magic-link", "/api/v1/auth/verify", "/api/v1/comments/public/"},
 		IsProduction:     cfg.Env == "production",
 	})
 

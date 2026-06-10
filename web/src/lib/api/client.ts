@@ -1,7 +1,6 @@
 import type { ApiError } from '$lib/types';
 
 const BASE_URL = '/api/v1';
-const TOKEN_KEY = 'openrsvp_session';
 const CSRF_COOKIE = 'csrf_token';
 const CSRF_HEADER = 'X-CSRF-Token';
 
@@ -16,29 +15,6 @@ function getCookie(name: string): string {
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 class ApiClient {
-	private token: string = '';
-
-	constructor() {
-		if (typeof window !== 'undefined') {
-			this.token = localStorage.getItem(TOKEN_KEY) || '';
-		}
-	}
-
-	setToken(token: string) {
-		this.token = token;
-		if (typeof window !== 'undefined') {
-			if (token) {
-				localStorage.setItem(TOKEN_KEY, token);
-			} else {
-				localStorage.removeItem(TOKEN_KEY);
-			}
-		}
-	}
-
-	getToken(): string {
-		return this.token;
-	}
-
 	async request<T>(path: string, options: RequestInit = {}): Promise<T> {
 		const url = `${BASE_URL}${path}`;
 		const method = (options.method || 'GET').toUpperCase();
@@ -46,10 +22,6 @@ class ApiClient {
 			'Content-Type': 'application/json',
 			...((options.headers as Record<string, string>) || {})
 		};
-
-		if (this.token) {
-			headers['Authorization'] = `Bearer ${this.token}`;
-		}
 
 		if (MUTATION_METHODS.has(method)) {
 			const csrfToken = getCookie(CSRF_COOKIE);
@@ -60,6 +32,7 @@ class ApiClient {
 
 		const response = await fetch(url, {
 			...options,
+			credentials: 'include',
 			headers
 		});
 
@@ -125,9 +98,6 @@ class ApiClient {
 		formData.append('file', file);
 
 		const headers: Record<string, string> = {};
-		if (this.token) {
-			headers['Authorization'] = `Bearer ${this.token}`;
-		}
 
 		const csrfToken = getCookie(CSRF_COOKIE);
 		if (csrfToken) {
@@ -136,6 +106,7 @@ class ApiClient {
 
 		const response = await fetch(url, {
 			method: 'POST',
+			credentials: 'include',
 			headers,
 			body: formData
 		});
@@ -169,9 +140,6 @@ class ApiClient {
 		formData.append('image', file);
 
 		const headers: Record<string, string> = {};
-		if (this.token) {
-			headers['Authorization'] = `Bearer ${this.token}`;
-		}
 		// Do NOT set Content-Type — browser sets multipart boundary automatically.
 
 		// Upload is always a POST (mutation) — include CSRF token.
@@ -182,6 +150,7 @@ class ApiClient {
 
 		const response = await fetch(url, {
 			method: 'POST',
+			credentials: 'include',
 			headers,
 			body: formData
 		});
