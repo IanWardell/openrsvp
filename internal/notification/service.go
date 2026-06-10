@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,19 +36,55 @@ type LogEntry struct {
 	CreatedAt      time.Time
 }
 
+// SuppressionChecker is the optional dependency the Service uses to skip
+// suppressed recipients and to build unsubscribe links. It is satisfied by
+// *suppression.Service. A nil checker disables the suppression gate and the
+// unsubscribe footer (graceful degradation).
+type SuppressionChecker interface {
+	// IsSuppressed reports whether the address is suppressed globally or for
+	// the given event (eventID "" means global only).
+	IsSuppressed(ctx context.Context, email, eventID string) bool
+	// GenerateUnsubscribeToken mints an unsubscribe token for the address,
+	// scoped to the event (eventID "" means global).
+	GenerateUnsubscribeToken(ctx context.Context, email, eventID string) (string, error)
+}
+
+// Options configures optional Service behavior. The zero value disables open
+// tracking and the unsubscribe footer, preserving legacy behavior.
+type Options struct {
+	// BaseURL is the public base URL used to build tracking-pixel and
+	// unsubscribe links (e.g. "https://rsvp.example.com").
+	BaseURL string
+	// OpenTrackingEnabled controls whether an open-tracking pixel is embedded
+	// into outbound HTML email bodies (EMAIL_OPEN_TRACKING_ENABLED).
+	OpenTrackingEnabled bool
+	// Suppression is the optional suppression dependency. When nil, the
+	// suppression gate and unsubscribe footer are disabled.
+	Suppression SuppressionChecker
+}
+
 // Service dispatches notifications via registered providers and logs results.
 type Service struct {
 	registry *Registry
 	db       database.DB
 	logger   zerolog.Logger
+	opts     Options
 }
 
-// NewService creates a new notification Service.
+// NewService creates a new notification Service with default (disabled)
+// options: no open-tracking pixel, no suppression gate, no unsubscribe footer.
 func NewService(registry *Registry, db database.DB, logger zerolog.Logger) *Service {
+	return NewServiceWithOptions(registry, db, logger, Options{})
+}
+
+// NewServiceWithOptions creates a new notification Service with the given
+// options for open tracking, base URL, and the optional suppression checker.
+func NewServiceWithOptions(registry *Registry, db database.DB, logger zerolog.Logger, opts Options) *Service {
 	return &Service{
 		registry: registry,
 		db:       db,
 		logger:   logger,
+		opts:     opts,
 	}
 }
 
@@ -58,8 +95,22 @@ func (s *Service) Send(ctx context.Context, eventID, attendeeID string, ch Chann
 		return fmt.Errorf("get provider: %w", err)
 	}
 
+	// Suppression gate: skip email recipients that have unsubscribed, bounced,
+	// or complained. SMS is not gated by email suppression.
+	if s.isSuppressedEmail(ctx, ch, msg.To, eventID) {
+		s.logger.Info().Str("recipient", msg.To).Str("event_id", eventID).Msg("recipient suppressed, skipping send")
+		return nil
+	}
+
 	logID := uuid.Must(uuid.NewV7()).String()
 	now := time.Now().UTC()
+
+	// For email, append an unsubscribe footer and embed the open-tracking
+	// pixel keyed on this log row's id before logging/sending.
+	if ch == ChannelEmail {
+		s.applyUnsubscribeFooter(ctx, msg, eventID)
+		s.embedOpenPixel(msg, logID)
+	}
 
 	// Insert pending log entry with recipient and subject for tracking.
 	if err := s.insertLog(ctx, logID, eventID, attendeeID, string(ch), provider.Name(), "pending", "", msg.To, msg.Subject, nil, now); err != nil {
@@ -110,6 +161,73 @@ func (s *Service) Send(ctx context.Context, eventID, attendeeID string, ch Chann
 	return nil
 }
 
+// isSuppressedEmail reports whether an email recipient is suppressed. It
+// returns false when the channel is not email or when no suppression checker
+// is configured.
+func (s *Service) isSuppressedEmail(ctx context.Context, ch Channel, email, eventID string) bool {
+	if ch != ChannelEmail || s.opts.Suppression == nil || email == "" {
+		return false
+	}
+	return s.opts.Suppression.IsSuppressed(ctx, email, eventID)
+}
+
+// embedOpenPixel injects a 1x1 open-tracking pixel into the HTML body of an
+// email, keyed on the notification_log row id. It is a no-op when open
+// tracking is disabled, no base URL is set, or the message has no HTML body.
+// Plain-text parts never receive a pixel.
+func (s *Service) embedOpenPixel(msg *Message, logID string) {
+	if !s.opts.OpenTrackingEnabled || s.opts.BaseURL == "" || msg.Body == "" {
+		return
+	}
+	pixel := fmt.Sprintf(
+		`<img src="%s/api/v1/notifications/track/open/%s" width="1" height="1" alt="" style="display:none" />`,
+		strings.TrimRight(s.opts.BaseURL, "/"), logID,
+	)
+	// Append before </body> when present so the pixel stays inside the document.
+	if idx := strings.LastIndex(strings.ToLower(msg.Body), "</body>"); idx != -1 {
+		msg.Body = msg.Body[:idx] + pixel + msg.Body[idx:]
+	} else {
+		msg.Body += pixel
+	}
+}
+
+// applyUnsubscribeFooter appends an unsubscribe footer to the HTML and plain
+// text parts of an email. It is a no-op when no suppression checker is
+// configured or no base URL is set. The link is scoped to the event so the
+// recipient can opt out of just this event's mail.
+func (s *Service) applyUnsubscribeFooter(ctx context.Context, msg *Message, eventID string) {
+	if s.opts.Suppression == nil || s.opts.BaseURL == "" || msg.To == "" {
+		return
+	}
+	token, err := s.opts.Suppression.GenerateUnsubscribeToken(ctx, msg.To, eventID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("recipient", msg.To).Msg("failed to generate unsubscribe token")
+		return
+	}
+	base := strings.TrimRight(s.opts.BaseURL, "/")
+	link := fmt.Sprintf("%s/unsubscribe?token=%s", base, token)
+
+	if msg.Body != "" {
+		footerHTML := fmt.Sprintf(
+			`<div style="margin-top:24px;font-size:12px;color:#A8A29E;text-align:center">`+
+				`<a href="%s" style="color:#A8A29E">Unsubscribe from these emails</a></div>`,
+			link,
+		)
+		if idx := strings.LastIndex(strings.ToLower(msg.Body), "</body>"); idx != -1 {
+			msg.Body = msg.Body[:idx] + footerHTML + msg.Body[idx:]
+		} else {
+			msg.Body += footerHTML
+		}
+	}
+
+	// Only extend an existing plain-text part. When Plain is empty the
+	// providers fall back to Body (which already carries the footer), so we
+	// avoid clobbering the body content with a footer-only plain part.
+	if msg.Plain != "" {
+		msg.Plain += "\n\n---\nUnsubscribe from these emails: " + link + "\n"
+	}
+}
+
 // SendBatch delivers multiple notifications and logs each result.
 func (s *Service) SendBatch(ctx context.Context, eventID, attendeeID string, ch Channel, msgs []*Message) []error {
 	provider, err := s.registry.Get(ch)
@@ -124,9 +242,14 @@ func (s *Service) SendBatch(ctx context.Context, eventID, attendeeID string, ch 
 	now := time.Now().UTC()
 	logIDs := make([]string, len(msgs))
 
-	// Insert pending log entries for each message.
+	// Insert pending log entries for each message, applying the unsubscribe
+	// footer and open-tracking pixel for email messages.
 	for i, msg := range msgs {
 		logIDs[i] = uuid.Must(uuid.NewV7()).String()
+		if ch == ChannelEmail {
+			s.applyUnsubscribeFooter(ctx, msg, eventID)
+			s.embedOpenPixel(msg, logIDs[i])
+		}
 		if err := s.insertLog(ctx, logIDs[i], eventID, attendeeID, string(ch), provider.Name(), "pending", "", msg.To, msg.Subject, nil, now); err != nil {
 			s.logger.Error().Err(err).Int("index", i).Msg("failed to insert notification log")
 		}

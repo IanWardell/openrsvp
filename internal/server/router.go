@@ -123,6 +123,10 @@ func (s *Server) routes() *chi.Mux {
 		api.Mount("/webhooks", s.webhookHandler.Routes())
 		api.Mount("/notifications", s.notifHandler.Routes())
 		api.Mount("/admin", s.statsHandler.Routes())
+		// Public, token-based email unsubscribe (no auth, CSRF-exempt).
+		api.Mount("/unsubscribe", s.suppressionHandler.Routes())
+		// Instance setup wizard: GET /setup/status is public; config read/write are admin.
+		api.Mount("/setup", s.instanceConfigHandler.Routes())
 	})
 
 	// --- Static files / SPA fallback ---

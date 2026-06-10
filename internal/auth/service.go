@@ -256,6 +256,16 @@ func (s *Service) UpdateProfile(ctx context.Context, organizer *Organizer) error
 	return s.store.UpdateOrganizer(ctx, organizer)
 }
 
+// ExportData returns a full data export for the given organizer.
+func (s *Service) ExportData(ctx context.Context, organizerID string) (*ExportDocument, error) {
+	return s.store.ExportOrganizerData(ctx, organizerID)
+}
+
+// DeleteAccount permanently deletes the organizer and all of their data.
+func (s *Service) DeleteAccount(ctx context.Context, organizerID string) error {
+	return s.store.DeleteOrganizerCascade(ctx, organizerID)
+}
+
 // hashToken returns the hex-encoded SHA-256 hash of the given token string.
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))

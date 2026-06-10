@@ -19,6 +19,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/database"
 	"github.com/yannkr/openrsvp/internal/event"
 	"github.com/yannkr/openrsvp/internal/feedback"
+	"github.com/yannkr/openrsvp/internal/instanceconfig"
 	"github.com/yannkr/openrsvp/internal/invite"
 	"github.com/yannkr/openrsvp/internal/message"
 	"github.com/yannkr/openrsvp/internal/notification"
@@ -28,32 +29,35 @@ import (
 	"github.com/yannkr/openrsvp/internal/scheduler"
 	"github.com/yannkr/openrsvp/internal/security"
 	"github.com/yannkr/openrsvp/internal/stats"
+	"github.com/yannkr/openrsvp/internal/suppression"
 	"github.com/yannkr/openrsvp/internal/webhook"
 )
 
 // Server is the main HTTP server for OpenRSVP.
 type Server struct {
-	cfg             *config.Config
-	db              database.DB
-	logger          zerolog.Logger
-	http            *http.Server
-	authHandler     *auth.Handler
-	eventHandler    *event.Handler
-	seriesHandler   *event.SeriesHandler
-	rsvpHandler     *rsvp.Handler
-	inviteHandler   *invite.Handler
-	messageHandler  *message.Handler
-	questionHandler *question.Handler
-	feedbackHandler *feedback.Handler
-	reminderHandler *scheduler.Handler
-	commentHandler  *comment.Handler
-	webhookHandler  *webhook.Handler
-	notifHandler    *notification.Handler
-	notifService    *notification.Service
-	statsHandler    *stats.Handler
-	scheduler       *scheduler.Scheduler
-	securityMw      *security.Middleware
-	uploadsDir      string
+	cfg                   *config.Config
+	db                    database.DB
+	logger                zerolog.Logger
+	http                  *http.Server
+	authHandler           *auth.Handler
+	eventHandler          *event.Handler
+	seriesHandler         *event.SeriesHandler
+	rsvpHandler           *rsvp.Handler
+	inviteHandler         *invite.Handler
+	messageHandler        *message.Handler
+	questionHandler       *question.Handler
+	feedbackHandler       *feedback.Handler
+	reminderHandler       *scheduler.Handler
+	commentHandler        *comment.Handler
+	webhookHandler        *webhook.Handler
+	notifHandler          *notification.Handler
+	notifService          *notification.Service
+	statsHandler          *stats.Handler
+	suppressionHandler    *suppression.Handler
+	instanceConfigHandler *instanceconfig.Handler
+	scheduler             *scheduler.Scheduler
+	securityMw            *security.Middleware
+	uploadsDir            string
 }
 
 // commentEventStoreAdapter adapts event.Service to comment.EventStore.
@@ -237,13 +241,22 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	webhookDispatcher := webhook.NewDispatcher(webhookStore, logger)
 	webhookHandler := webhook.NewHandler(webhookService, webhookDispatcher, authMiddleware, webhook.OrganizerFromCtx(organizerFromCtx), webhook.EventOwnershipChecker(checkEventOwner), logger)
 
+	// Wire up email suppression / unsubscribe layer (consumed by notification).
+	suppressionStore := suppression.NewStore(db)
+	suppressionService := suppression.NewService(suppressionStore)
+	suppressionHandler := suppression.NewHandler(suppressionService, logger)
+
 	// Wire up notification layer.
 	notifRegistry := buildNotificationRegistry(cfg, logger)
-	notifService := notification.NewService(notifRegistry, db, logger)
+	notifService := notification.NewServiceWithOptions(notifRegistry, db, logger, notification.Options{
+		BaseURL:             cfg.BaseURL,
+		OpenTrackingEnabled: cfg.EmailOpenTrackingEnabled,
+		Suppression:         suppressionService,
+	})
 
 	// Wire up notification tracking layer.
 	trackingService := notification.NewTrackingService(db, logger)
-	notifHandler := notification.NewHandler(trackingService, notifService, authMiddleware, notification.OrganizerFromCtx(organizerFromCtx), notification.EventOwnershipChecker(checkEventOwner), logger)
+	notifHandler := notification.NewHandler(trackingService, notifService, suppressionService, authMiddleware, notification.OrganizerFromCtx(organizerFromCtx), notification.EventOwnershipChecker(checkEventOwner), logger)
 
 	// Wire email sending into auth service (breaks circular dep via function).
 	if notifRegistry.Has(notification.ChannelEmail) {
@@ -538,8 +551,16 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		RSVPRateLimit:    30,
 		GeneralRateLimit: 200,
 		RateWindow:       1 * time.Minute,
-		CSRFExcludePaths: []string{"/api/v1/rsvp/public/", "/api/v1/auth/magic-link", "/api/v1/auth/verify", "/api/v1/comments/public/"},
-		IsProduction:     cfg.Env == "production",
+		CSRFExcludePaths: []string{
+			"/api/v1/rsvp/public/",
+			"/api/v1/auth/magic-link",
+			"/api/v1/auth/verify",
+			"/api/v1/comments/public/",
+			"/api/v1/feedback/public",         // unauthenticated guest bug reports
+			"/api/v1/unsubscribe",             // token-based email opt-out (no session)
+			"/api/v1/notifications/webhooks/", // inbound SendGrid/SES delivery events
+		},
+		IsProduction: cfg.Env == "production",
 	})
 
 	// Wire up message layer.
@@ -895,27 +916,39 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	adminMiddleware := auth.RequireAdmin()
 	statsHandler := stats.NewHandler(statsService, authMiddleware, adminMiddleware, logger)
 
+	// Wire up instance setup/config layer. DB-backed non-secret overrides
+	// (instance name, default timezone, signups, support email) are overlaid
+	// on top of the env-derived config at startup.
+	instanceConfigStore := instanceconfig.NewStore(db)
+	instanceConfigService := instanceconfig.NewService(instanceConfigStore)
+	if overrides, err := instanceConfigStore.GetAll(context.Background()); err == nil {
+		cfg.ApplyInstanceOverrides(overrides)
+	}
+	instanceConfigHandler := instanceconfig.NewHandler(instanceConfigService, authMiddleware, adminMiddleware, logger)
+
 	s := &Server{
-		cfg:             cfg,
-		db:              db,
-		logger:          logger,
-		authHandler:     authHandler,
-		eventHandler:    eventHandler,
-		seriesHandler:   seriesHandler,
-		rsvpHandler:     rsvpHandler,
-		inviteHandler:   inviteHandler,
-		messageHandler:  messageHandler,
-		questionHandler: questionHandler,
-		feedbackHandler: feedbackHandler,
-		reminderHandler: reminderHandler,
-		commentHandler:  commentHandler,
-		webhookHandler:  webhookHandler,
-		notifHandler:    notifHandler,
-		notifService:    notifService,
-		statsHandler:    statsHandler,
-		scheduler:       sched,
-		securityMw:      secMw,
-		uploadsDir:      uploadsDir,
+		cfg:                   cfg,
+		db:                    db,
+		logger:                logger,
+		authHandler:           authHandler,
+		eventHandler:          eventHandler,
+		seriesHandler:         seriesHandler,
+		rsvpHandler:           rsvpHandler,
+		inviteHandler:         inviteHandler,
+		messageHandler:        messageHandler,
+		questionHandler:       questionHandler,
+		feedbackHandler:       feedbackHandler,
+		reminderHandler:       reminderHandler,
+		commentHandler:        commentHandler,
+		webhookHandler:        webhookHandler,
+		notifHandler:          notifHandler,
+		notifService:          notifService,
+		statsHandler:          statsHandler,
+		suppressionHandler:    suppressionHandler,
+		instanceConfigHandler: instanceConfigHandler,
+		scheduler:             sched,
+		securityMw:            secMw,
+		uploadsDir:            uploadsDir,
 	}
 
 	router := s.routes()
