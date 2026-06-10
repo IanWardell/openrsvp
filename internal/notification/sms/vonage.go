@@ -19,7 +19,11 @@ type VonageProvider struct {
 	apiSecret string
 	from      string
 	client    *http.Client
+	baseURL   string
 }
+
+// vonageDefaultURL is the production Vonage SMS endpoint.
+const vonageDefaultURL = "https://rest.nexmo.com/sms/json"
 
 // NewVonageProvider creates a new VonageProvider with the given API key,
 // API secret, and sender name/number.
@@ -29,6 +33,7 @@ func NewVonageProvider(apiKey, apiSecret, from string) *VonageProvider {
 		apiSecret: apiSecret,
 		from:      from,
 		client:    &http.Client{Timeout: 30 * time.Second},
+		baseURL:   vonageDefaultURL,
 	}
 }
 
@@ -53,8 +58,8 @@ type vonageRequest struct {
 
 // vonageResponse is the JSON response from the Vonage SMS API.
 type vonageResponse struct {
-	MessageCount string           `json:"message-count"`
-	Messages     []vonageMessage  `json:"messages"`
+	MessageCount string          `json:"message-count"`
+	Messages     []vonageMessage `json:"messages"`
 }
 
 // vonageMessage represents a single message result in the Vonage response.
@@ -80,7 +85,7 @@ func (p *VonageProvider) Send(ctx context.Context, msg *notification.Message) (*
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://rest.nexmo.com/sms/json", bytes.NewReader(body))
+		p.baseURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("vonage create request: %w", err)
 	}

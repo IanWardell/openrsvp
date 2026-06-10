@@ -265,7 +265,7 @@ func TestWebhookService_CreateWebhook(t *testing.T) {
 	createParentEvent(t, ctx, db, eventID)
 
 	logger := zerolog.Nop()
-	svc := NewService(store, logger)
+	svc := NewService(store, logger, false)
 
 	result, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:         "https://example.com/hook",
@@ -288,7 +288,7 @@ func TestWebhookService_CreateWebhook_InvalidURL(t *testing.T) {
 	createParentEvent(t, ctx, db, eventID)
 
 	logger := zerolog.Nop()
-	svc := NewService(store, logger)
+	svc := NewService(store, logger, false)
 
 	_, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "ftp://example.com/hook",
@@ -307,7 +307,7 @@ func TestWebhookService_CreateWebhook_InvalidEventType(t *testing.T) {
 	createParentEvent(t, ctx, db, eventID)
 
 	logger := zerolog.Nop()
-	svc := NewService(store, logger)
+	svc := NewService(store, logger, false)
 
 	_, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
@@ -326,7 +326,7 @@ func TestWebhookService_CreateWebhook_NoEventTypes(t *testing.T) {
 	createParentEvent(t, ctx, db, eventID)
 
 	logger := zerolog.Nop()
-	svc := NewService(store, logger)
+	svc := NewService(store, logger, false)
 
 	_, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
@@ -345,7 +345,7 @@ func TestWebhookService_RotateSecret(t *testing.T) {
 	createParentEvent(t, ctx, db, eventID)
 
 	logger := zerolog.Nop()
-	svc := NewService(store, logger)
+	svc := NewService(store, logger, false)
 
 	created, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
@@ -367,7 +367,7 @@ func TestWebhookService_UpdateWebhook(t *testing.T) {
 	createParentEvent(t, ctx, db, eventID)
 
 	logger := zerolog.Nop()
-	svc := NewService(store, logger)
+	svc := NewService(store, logger, false)
 
 	created, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
@@ -395,7 +395,7 @@ func TestWebhookService_DeleteWebhook(t *testing.T) {
 	createParentEvent(t, ctx, db, eventID)
 
 	logger := zerolog.Nop()
-	svc := NewService(store, logger)
+	svc := NewService(store, logger, false)
 
 	created, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
@@ -420,7 +420,7 @@ func TestWebhookService_MaxWebhooksPerEvent(t *testing.T) {
 	createParentEvent(t, ctx, db, eventID)
 
 	logger := zerolog.Nop()
-	svc := NewService(store, logger)
+	svc := NewService(store, logger, false)
 
 	// Create max webhooks.
 	for i := 0; i < maxWebhooksPerEvent; i++ {
@@ -449,7 +449,7 @@ func TestWebhookService_ListByEvent(t *testing.T) {
 	createParentEvent(t, ctx, db, eventID)
 
 	logger := zerolog.Nop()
-	svc := NewService(store, logger)
+	svc := NewService(store, logger, false)
 
 	// Empty list should return empty slice, not nil.
 	webhooks, err := svc.ListByEvent(ctx, eventID)
@@ -480,7 +480,7 @@ func TestWebhookService_GetDeliveries_Empty(t *testing.T) {
 	createParentEvent(t, ctx, db, eventID)
 
 	logger := zerolog.Nop()
-	svc := NewService(store, logger)
+	svc := NewService(store, logger, false)
 
 	created, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
@@ -523,6 +523,7 @@ func TestWebhookDispatcher_SSRF_NilIP(t *testing.T) {
 }
 
 func TestIsValidWebhookURL(t *testing.T) {
+	// Development mode: http:// is allowed for localhost testing.
 	tests := []struct {
 		url   string
 		valid bool
@@ -538,9 +539,60 @@ func TestIsValidWebhookURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.url, func(t *testing.T) {
-			assert.Equal(t, tt.valid, isValidWebhookURL(tt.url))
+			assert.Equal(t, tt.valid, isValidWebhookURL(tt.url, false))
 		})
 	}
+}
+
+func TestIsValidWebhookURL_RequireHTTPS(t *testing.T) {
+	tests := []struct {
+		name         string
+		url          string
+		requireHTTPS bool
+		valid        bool
+	}{
+		// https:// is accepted in both modes.
+		{"https-dev", "https://example.com/hook", false, true},
+		{"https-prod", "https://example.com/hook", true, true},
+		// http:// is rejected in production, allowed in development.
+		{"http-dev", "http://localhost:8080/hook", false, true},
+		{"http-prod", "http://localhost:8080/hook", true, false},
+		{"http-public-prod", "http://example.com/hook", true, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.valid, isValidWebhookURL(tt.url, tt.requireHTTPS))
+		})
+	}
+}
+
+func TestWebhookService_CreateWebhook_RequireHTTPS(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	eventID := uuid.Must(uuid.NewV7()).String()
+	createParentEvent(t, ctx, db, eventID)
+
+	logger := zerolog.Nop()
+	svc := NewService(store, logger, true)
+
+	// http:// is rejected in production mode.
+	_, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
+		URL:        "http://example.com/hook",
+		EventTypes: []string{"rsvp.created"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "https")
+
+	// https:// is accepted in production mode.
+	result, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
+		URL:        "https://example.com/hook",
+		EventTypes: []string{"rsvp.created"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://example.com/hook", result.URL)
 }
 
 func TestGenerateSecret(t *testing.T) {

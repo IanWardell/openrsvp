@@ -19,7 +19,11 @@ type TwilioProvider struct {
 	authToken  string
 	fromNumber string
 	client     *http.Client
+	baseURL    string
 }
+
+// twilioDefaultBaseURL is the production Twilio REST API base.
+const twilioDefaultBaseURL = "https://api.twilio.com"
 
 // NewTwilioProvider creates a new TwilioProvider with the given Twilio
 // Account SID, Auth Token, and sender phone number.
@@ -29,6 +33,7 @@ func NewTwilioProvider(accountSID, authToken, fromNumber string) *TwilioProvider
 		authToken:  authToken,
 		fromNumber: fromNumber,
 		client:     &http.Client{Timeout: 30 * time.Second},
+		baseURL:    twilioDefaultBaseURL,
 	}
 }
 
@@ -44,7 +49,7 @@ func (p *TwilioProvider) Channel() notification.Channel {
 
 // Send delivers a single SMS via the Twilio Messages API.
 func (p *TwilioProvider) Send(ctx context.Context, msg *notification.Message) (*notification.SendResult, error) {
-	apiURL := fmt.Sprintf("https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json", p.accountSID)
+	apiURL := fmt.Sprintf("%s/2010-04-01/Accounts/%s/Messages.json", p.baseURL, p.accountSID)
 
 	// Build form-encoded body.
 	form := url.Values{}
@@ -100,7 +105,7 @@ func (p *TwilioProvider) HealthCheck(ctx context.Context) error {
 		return fmt.Errorf("twilio health check: account SID or auth token is empty")
 	}
 
-	apiURL := fmt.Sprintf("https://api.twilio.com/2010-04-01/Accounts/%s.json", p.accountSID)
+	apiURL := fmt.Sprintf("%s/2010-04-01/Accounts/%s.json", p.baseURL, p.accountSID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {

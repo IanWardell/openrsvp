@@ -37,3 +37,12 @@ web/playwright-report/
 
 # Temp
 tmp/
+
+# Local tooling / AI artifacts (do not commit)
+.gstack/
+.claude/
+_bmad/
+.meister/
+spec/
+MARKET_RESEARCH.md
+tests/e2e/node_modules/

@@ -279,6 +279,225 @@ func (s *Store) SetAdminStatus(ctx context.Context, id string, isAdmin bool) err
 	return nil
 }
 
+// ExportOrganizerData gathers every record owned by the organizer into a
+// single document suitable for a GDPR-style data export. It reads the
+// organizer's profile, their events, and every child record belonging to
+// those events. Only data owned by the given organizer is returned.
+func (s *Store) ExportOrganizerData(ctx context.Context, organizerID string) (*ExportDocument, error) {
+	organizer, err := s.FindOrganizerByID(ctx, organizerID)
+	if err != nil {
+		return nil, fmt.Errorf("find organizer: %w", err)
+	}
+	if organizer == nil {
+		return nil, sql.ErrNoRows
+	}
+
+	doc := &ExportDocument{
+		ExportedAt: time.Now().UTC().Format(time.RFC3339),
+		Organizer:  organizer,
+		Events:     []map[string]any{},
+		Series:     []map[string]any{},
+	}
+
+	// Collect the event IDs owned by this organizer so child rows can be
+	// scoped without trusting the child tables' own foreign keys.
+	eventIDs, err := s.organizerEventIDs(ctx, organizerID)
+	if err != nil {
+		return nil, fmt.Errorf("list event ids: %w", err)
+	}
+
+	doc.Events, err = queryRowsByOrganizer(ctx, s.db,
+		"SELECT * FROM events WHERE organizer_id = ? ORDER BY created_at", organizerID)
+	if err != nil {
+		return nil, fmt.Errorf("export events: %w", err)
+	}
+
+	doc.Series, err = queryRowsByOrganizer(ctx, s.db,
+		"SELECT * FROM event_series WHERE organizer_id = ? ORDER BY created_at", organizerID)
+	if err != nil {
+		return nil, fmt.Errorf("export series: %w", err)
+	}
+
+	if len(eventIDs) > 0 {
+		in, args := inClause(eventIDs)
+
+		// Child tables keyed directly by event_id.
+		eventChildren := map[string]*[]map[string]any{
+			"SELECT * FROM attendees WHERE event_id IN " + in:        &doc.Attendees,
+			"SELECT * FROM event_questions WHERE event_id IN " + in:  &doc.Questions,
+			"SELECT * FROM event_comments WHERE event_id IN " + in:   &doc.Comments,
+			"SELECT * FROM messages WHERE event_id IN " + in:         &doc.Messages,
+			"SELECT * FROM webhooks WHERE event_id IN " + in:         &doc.Webhooks,
+			"SELECT * FROM reminders WHERE event_id IN " + in:        &doc.Reminders,
+			"SELECT * FROM invite_cards WHERE event_id IN " + in:     &doc.InviteCards,
+			"SELECT * FROM notification_log WHERE event_id IN " + in: &doc.NotificationLog,
+		}
+		for query, dest := range eventChildren {
+			rows, err := queryRows(ctx, s.db, query, args...)
+			if err != nil {
+				return nil, fmt.Errorf("export event children: %w", err)
+			}
+			*dest = rows
+		}
+	}
+
+	return doc, nil
+}
+
+// DeleteOrganizerCascade permanently deletes the organizer and every record
+// they own, in a single transaction. Deletion proceeds children-first so the
+// operation succeeds regardless of whether foreign-key cascade is enforced.
+// Every statement is scoped strictly to the given organizer's data.
+func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Grandchildren / records reachable only through an event the organizer
+	// owns. Scoped via a subselect on events.organizer_id so no other
+	// organizer's data is ever touched.
+	ev := "(SELECT id FROM events WHERE organizer_id = ?)"
+
+	stmts := []struct {
+		query string
+		args  []any
+	}{
+		// attendee_answers -> attendees -> events
+		{"DELETE FROM attendee_answers WHERE attendee_id IN (SELECT id FROM attendees WHERE event_id IN " + ev + ")", []any{organizerID}},
+		// webhook_deliveries -> webhooks -> events
+		{"DELETE FROM webhook_deliveries WHERE webhook_id IN (SELECT id FROM webhooks WHERE event_id IN " + ev + ")", []any{organizerID}},
+		// event_comments -> events
+		{"DELETE FROM event_comments WHERE event_id IN " + ev, []any{organizerID}},
+		// notification_log -> events
+		{"DELETE FROM notification_log WHERE event_id IN " + ev, []any{organizerID}},
+		// messages -> events
+		{"DELETE FROM messages WHERE event_id IN " + ev, []any{organizerID}},
+		// reminders -> events
+		{"DELETE FROM reminders WHERE event_id IN " + ev, []any{organizerID}},
+		// webhooks -> events
+		{"DELETE FROM webhooks WHERE event_id IN " + ev, []any{organizerID}},
+		// event_questions -> events
+		{"DELETE FROM event_questions WHERE event_id IN " + ev, []any{organizerID}},
+		// invite_cards -> events
+		{"DELETE FROM invite_cards WHERE event_id IN " + ev, []any{organizerID}},
+		// attendees -> events
+		{"DELETE FROM attendees WHERE event_id IN " + ev, []any{organizerID}},
+		// cohost rows on the organizer's own events
+		{"DELETE FROM event_cohosts WHERE event_id IN " + ev, []any{organizerID}},
+		// cohost rows where this organizer is a cohost or the inviter on
+		// someone else's event.
+		{"DELETE FROM event_cohosts WHERE organizer_id = ? OR added_by = ?", []any{organizerID, organizerID}},
+		// events themselves
+		{"DELETE FROM events WHERE organizer_id = ?", []any{organizerID}},
+		// event series owned by the organizer (events.series_id is ON DELETE
+		// SET NULL, and the events are already gone above).
+		{"DELETE FROM event_series WHERE organizer_id = ?", []any{organizerID}},
+		// auth records tied directly to the organizer
+		{"DELETE FROM magic_links WHERE organizer_id = ?", []any{organizerID}},
+		{"DELETE FROM sessions WHERE organizer_id = ?", []any{organizerID}},
+		// finally the organizer row itself
+		{"DELETE FROM organizers WHERE id = ?", []any{organizerID}},
+	}
+
+	for _, st := range stmts {
+		if _, err := tx.ExecContext(ctx, st.query, st.args...); err != nil {
+			return fmt.Errorf("cascade delete (%s): %w", st.query, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
+	return nil
+}
+
+// organizerEventIDs returns the IDs of every event owned by the organizer.
+func (s *Store) organizerEventIDs(ctx context.Context, organizerID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT id FROM events WHERE organizer_id = ?", organizerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// inClause builds a parameterised "(?, ?, ...)" IN clause and the matching
+// argument slice for the given ids.
+func inClause(ids []string) (string, []any) {
+	placeholders := make([]byte, 0, len(ids)*2)
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			placeholders = append(placeholders, ',')
+		}
+		placeholders = append(placeholders, '?')
+		args[i] = id
+	}
+	return "(" + string(placeholders) + ")", args
+}
+
+// queryRowsByOrganizer runs a single-argument query and returns each row as a
+// generic map keyed by column name.
+func queryRowsByOrganizer(ctx context.Context, db database.DB, query, organizerID string) ([]map[string]any, error) {
+	return queryRows(ctx, db, query, organizerID)
+}
+
+// queryRows runs an arbitrary query and returns each row as a generic map
+// keyed by column name, so export output stays decoupled from the per-domain
+// model structs.
+func queryRows(ctx context.Context, db database.DB, query string, args ...any) ([]map[string]any, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	out := []map[string]any{}
+	for rows.Next() {
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+		row := make(map[string]any, len(cols))
+		for i, c := range cols {
+			row[c] = normalizeValue(vals[i])
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// normalizeValue converts driver byte-slice values to strings so the JSON
+// export renders text columns as strings rather than base64.
+func normalizeValue(v any) any {
+	if b, ok := v.([]byte); ok {
+		return string(b)
+	}
+	return v
+}
+
 // scanOrganizer scans a single row into an Organizer.
 func scanOrganizer(row *sql.Row) (*Organizer, error) {
 	var o Organizer

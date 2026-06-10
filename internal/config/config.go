@@ -72,6 +72,14 @@ type Config struct {
 
 	// Admin
 	AdminEmails []string
+
+	// Instance settings overlaid from the database (first-run setup wizard).
+	// These are non-secret values that an operator may set via the UI instead
+	// of editing .env. Empty/zero when the wizard has not been run.
+	InstanceName    string
+	DefaultTimezone string
+	AllowSignups    bool
+	SupportEmail    string
 }
 
 // Load reads environment variables (optionally from .env) and returns a Config.
@@ -190,6 +198,13 @@ func Load() (*Config, error) {
 
 		EmailOpenTrackingEnabled:  getEnv("EMAIL_OPEN_TRACKING_ENABLED", "true") == "true",
 		EmailClickTrackingEnabled: getEnv("EMAIL_CLICK_TRACKING_ENABLED", "false") == "true",
+
+		// Instance settings: env-provided defaults. The DB (setup wizard) may
+		// overlay these at startup via ApplyInstanceOverrides.
+		InstanceName:    getEnv("INSTANCE_NAME", "OpenRSVP"),
+		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "UTC"),
+		AllowSignups:    getEnv("ALLOW_SIGNUPS", "true") == "true",
+		SupportEmail:    getEnv("SUPPORT_EMAIL", ""),
 	}
 
 	// Parse ADMIN_EMAILS (comma-separated list of admin email addresses).
@@ -214,6 +229,30 @@ func (c *Config) IsAdminEmail(email string) bool {
 		}
 	}
 	return false
+}
+
+// ApplyInstanceOverrides overlays non-secret instance settings loaded from the
+// database (the first-run setup wizard) on top of the env-derived defaults.
+// Only keys present in the map are applied, so partial configuration is safe.
+// Secrets (SMTP passwords, API keys, Twilio tokens) are never sourced here —
+// they remain env-only. Intended to be called once at startup after the DB is
+// available, e.g.:
+//
+//	overrides, _ := instanceConfigStore.GetAll(ctx)
+//	cfg.ApplyInstanceOverrides(overrides)
+func (c *Config) ApplyInstanceOverrides(overrides map[string]string) {
+	if v, ok := overrides["instance_name"]; ok && v != "" {
+		c.InstanceName = v
+	}
+	if v, ok := overrides["default_timezone"]; ok && v != "" {
+		c.DefaultTimezone = v
+	}
+	if v, ok := overrides["allow_signups"]; ok && v != "" {
+		c.AllowSignups = v == "true"
+	}
+	if v, ok := overrides["support_email"]; ok && v != "" {
+		c.SupportEmail = v
+	}
 }
 
 // IsDevelopment returns true if the environment is development.

@@ -210,6 +210,105 @@ func TestSubmit_AllowFollowUp_SendsConfirmation(t *testing.T) {
 	assert.Contains(t, emails[1], "received your feedback")
 }
 
+func TestHandleSubmitPublic_Success(t *testing.T) {
+	var captured string
+	h := setupFeedbackHandler(&captured)
+	rr := testutil.DoRequest(t, h, "POST", "/public", map[string]string{
+		"message": "The RSVP button is broken on this invite",
+		"contact": "guest@example.com",
+		"source":  "/i/abc123",
+	})
+
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	body := testutil.ParseJSON(t, rr)
+	data, ok := body["data"].(map[string]any)
+	assert.True(t, ok)
+	assert.Equal(t, "submitted", data["status"])
+	// Routed through the email fallback to the configured feedback address.
+	assert.Contains(t, captured, "admin@example.com")
+	assert.Contains(t, captured, "Guest Feedback")
+}
+
+func TestHandleSubmitPublic_NoAuthRequired(t *testing.T) {
+	// Even with a handler that has no authenticated organizer in context,
+	// the public path must succeed.
+	h := setupFeedbackHandlerNoAuth()
+	rr := testutil.DoRequest(t, h, "POST", "/public", map[string]string{
+		"message": "anonymous bug report",
+	})
+
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	body := testutil.ParseJSON(t, rr)
+	data, ok := body["data"].(map[string]any)
+	assert.True(t, ok)
+	assert.Equal(t, "submitted", data["status"])
+}
+
+func TestHandleSubmitPublic_Anonymous(t *testing.T) {
+	// No contact, no source -- still accepted.
+	h := setupFeedbackHandler(nil)
+	rr := testutil.DoRequest(t, h, "POST", "/public", map[string]string{
+		"message": "just a message",
+	})
+	assert.Equal(t, http.StatusCreated, rr.Code)
+}
+
+func TestHandleSubmitPublic_EmptyMessage(t *testing.T) {
+	h := setupFeedbackHandler(nil)
+	rr := testutil.DoRequest(t, h, "POST", "/public", map[string]string{
+		"message": "",
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	body := testutil.ParseJSON(t, rr)
+	assert.Equal(t, "bad_request", body["error"])
+	assert.Contains(t, body["message"], "message is required")
+}
+
+func TestHandleSubmitPublic_MessageTooLong(t *testing.T) {
+	h := setupFeedbackHandler(nil)
+	rr := testutil.DoRequest(t, h, "POST", "/public", map[string]string{
+		"message": strings.Repeat("a", 2001),
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	body := testutil.ParseJSON(t, rr)
+	assert.Equal(t, "bad_request", body["error"])
+	assert.Contains(t, body["message"], "2000 characters")
+}
+
+func TestHandleSubmitPublic_InvalidJSON(t *testing.T) {
+	h := setupFeedbackHandler(nil)
+	rr := testutil.DoRequest(t, h, "POST", "/public", "bad json{{{")
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	body := testutil.ParseJSON(t, rr)
+	assert.Equal(t, "bad_request", body["error"])
+}
+
+func TestSubmitGuest_EmailFallback_Anonymous(t *testing.T) {
+	var sentTo, sentSubject, sentPlain string
+	svc := NewService("", "", "feedback@example.com")
+	svc.SetEmailSender(func(ctx context.Context, to, subject, body, plain string) error {
+		sentTo = to
+		sentSubject = subject
+		sentPlain = plain
+		return nil
+	})
+
+	err := svc.SubmitGuest(context.Background(), "broken link", "", "")
+	assert.NoError(t, err)
+	assert.Equal(t, "feedback@example.com", sentTo)
+	assert.Contains(t, sentSubject, "Guest Feedback")
+	assert.Contains(t, sentPlain, "(anonymous)")
+}
+
+func TestSubmitGuest_NoChannel(t *testing.T) {
+	svc := NewService("", "", "")
+	err := svc.SubmitGuest(context.Background(), "broken link", "g@test.com", "/i/x")
+	assert.NoError(t, err)
+}
+
 func TestTruncate(t *testing.T) {
 	assert.Equal(t, "hello", truncate("hello", 10))
 	assert.Equal(t, "hel...", truncate("hello world", 3))

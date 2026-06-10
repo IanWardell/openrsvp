@@ -58,3 +58,21 @@ type AuthResponse struct {
 	Token     string     `json:"token"`
 	Organizer *Organizer `json:"organizer"`
 }
+
+// ExportDocument is the full GDPR-style data export for a single organizer.
+// Rows from per-domain tables are returned as generic maps keyed by column
+// name to keep the export decoupled from each domain's model structs.
+type ExportDocument struct {
+	ExportedAt      string           `json:"exportedAt"`
+	Organizer       *Organizer       `json:"organizer"`
+	Events          []map[string]any `json:"events"`
+	Series          []map[string]any `json:"series"`
+	Attendees       []map[string]any `json:"attendees"`
+	Questions       []map[string]any `json:"questions"`
+	Comments        []map[string]any `json:"comments"`
+	Messages        []map[string]any `json:"messages"`
+	Webhooks        []map[string]any `json:"webhooks"`
+	Reminders       []map[string]any `json:"reminders"`
+	InviteCards     []map[string]any `json:"inviteCards"`
+	NotificationLog []map[string]any `json:"notificationLog"`
+}

@@ -7,13 +7,16 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -21,17 +24,19 @@ jobs:
       - run: cd web && npm ci
       - run: cd web && npm run check
       - run: cd web && npm run build
+      # NOTE: `npm run test:visual` (Playwright visual regression) is intentionally
+      # NOT run here: it requires a running backend/server and is not headless-safe
+      # in CI without standing up the full app, so it would reliably fail.
 
   backend:
-    name: Backend (Go ${{ matrix.go }} / ${{ matrix.db }})
+    name: Backend (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ['1.23', '1.24']
-        db: ['sqlite']
+        go: ['1.24', '1.25']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: ${{ matrix.go }}
       - name: Install dependencies
@@ -40,17 +45,72 @@ jobs:
       - name: Create frontend placeholder for go:embed
         run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
       - run: go vet ./...
-      - run: go test -race -v ./...
+      - name: Run tests with coverage
+        run: go test -race -v -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Print total coverage
+        run: go tool cover -func=coverage.out | tail -1
+      - name: Upload coverage to Codecov
+        if: matrix.go == '1.25'
+        uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
       - run: go build -o /dev/null ./cmd/openrsvp
+
+  lint:
+    name: Lint (golangci-lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.25'
+      - name: Create frontend placeholder for go:embed
+        run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
+      - name: golangci-lint (advisory)
+        # Advisory only: golangci-lint v2.1.0 cannot yet type-check a go1.26
+        # codebase (it panics inside go/types). `go vet` in the backend job is the
+        # active static-analysis gate. Re-enable golangci-lint as a blocking check
+        # once a go1.26-compatible release can be pinned. Tracked in TODOS.md.
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.0
+          "$(go env GOPATH)/bin/golangci-lint" run \
+            || echo "::warning::golangci-lint advisory run did not pass (pending go1.26 tooling support)"
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    # Run on the toolchain the project actually targets (go1.26.3). On older Go
+    # the scan flags two crypto/x509 stdlib advisories that are already patched
+    # in 1.26.3; GOTOOLCHAIN=local pins the analysis to the installed version.
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.3'
+      - name: Create frontend placeholder for go:embed
+        run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck (advisory)
+        # Advisory: govulncheck flags freshly-published standard-library advisories
+        # that are not yet patched in any released Go toolchain (e.g. GO-2026-5037,
+        # GO-2026-5039). Those clear only with a Go point-release and cannot be
+        # fixed in-repo, so the scan surfaces them without gating the build.
+        run: |
+          govulncheck ./... \
+            || echo "::warning::govulncheck reported advisories (likely unpatched stdlib; clears on the next Go release)"
 
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
     needs: [frontend, backend]
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: false

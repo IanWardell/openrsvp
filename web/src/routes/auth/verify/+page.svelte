@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { api } from '$lib/api/client';
 	import { currentUser } from '$lib/stores/auth';
@@ -21,9 +21,12 @@
 			return;
 		}
 
+		// Strip the raw token from the URL/history before doing anything else,
+		// so it does not linger in browser history.
+		replaceState('/auth/verify', {});
+
 		try {
 			const result = await api.post<{ token: string; organizer: Organizer }>('/auth/verify', { token });
-			api.setToken(result.token);
 			$currentUser = result.organizer;
 			toast.success('Successfully signed in!');
 			goto('/events');

@@ -5,6 +5,7 @@
 	import type { PublicEvent, Attendee, Message, PublicAttendance, EventQuestion, QuestionAnswer, ApiError } from '$lib/types';
 	import QuestionRenderer from '$lib/components/questions/QuestionRenderer.svelte';
 	import AddToCalendar from '$lib/components/ui/AddToCalendar.svelte';
+	import GuestFeedback from '$lib/components/GuestFeedback.svelte';
 
 	interface RsvpData {
 		attendee: Attendee;
@@ -692,7 +693,8 @@
 			</div>
 
 			<!-- Powered by -->
-			<div class="text-center mt-8">
+			<div class="mt-8 flex flex-col items-center gap-2 text-center">
+				<GuestFeedback source={$page.url.pathname} />
 				<a href="/" class="text-xs text-neutral-400 hover:text-neutral-500 transition-colors">
 					Powered by OpenRSVP
 				</a>

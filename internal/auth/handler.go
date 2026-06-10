@@ -51,6 +51,8 @@ func (h *Handler) Routes(loginRateLimit ...func(http.Handler) http.Handler) chi.
 	r.Post("/logout", h.handleLogout)
 	r.With(RequireAuth(h.service)).Get("/me", h.handleMe)
 	r.With(RequireAuth(h.service)).Patch("/me", h.handleUpdateMe)
+	r.With(RequireAuth(h.service)).Get("/me/export", h.handleExportMe)
+	r.With(RequireAuth(h.service)).Delete("/me", h.handleDeleteMe)
 
 	return r
 }
@@ -214,6 +216,62 @@ func (h *Handler) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, organizer)
+}
+
+// handleExportMe handles GET /api/v1/auth/me/export. It returns a JSON
+// document containing the authenticated organizer's profile and all of the
+// data they own (events and their children). The response is scoped strictly
+// to the requesting organizer.
+func (h *Handler) handleExportMe(w http.ResponseWriter, r *http.Request) {
+	organizer := OrganizerFromContext(r.Context())
+	if organizer == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	doc, err := h.service.ExportData(r.Context(), organizer.ID)
+	if err != nil {
+		ref := errcode.Ref()
+		h.logger.Error().Err(err).Str("error_code", ref).Msg("failed to export organizer data")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "an internal error occurred (ref: " + ref + ")"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="openrsvp-export.json"`)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(doc)
+}
+
+// handleDeleteMe handles DELETE /api/v1/auth/me. It permanently deletes the
+// authenticated organizer's account and every record they own, then clears
+// the session cookie.
+func (h *Handler) handleDeleteMe(w http.ResponseWriter, r *http.Request) {
+	organizer := OrganizerFromContext(r.Context())
+	if organizer == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	if err := h.service.DeleteAccount(r.Context(), organizer.ID); err != nil {
+		ref := errcode.Ref()
+		h.logger.Error().Err(err).Str("error_code", ref).Msg("failed to delete account")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "an internal error occurred (ref: " + ref + ")"})
+		return
+	}
+
+	// Clear the session cookie, mirroring handleLogout.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   !h.cfg.IsDevelopment(),
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // extractToken reads the session token from the cookie or Authorization header.

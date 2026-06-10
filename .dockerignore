@@ -10,4 +10,10 @@ web/build
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
 tmp/
+.worktrees/
+.gstack/
+_bmad/
+bin/
+openrsvp

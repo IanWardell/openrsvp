@@ -242,7 +242,7 @@ func TestSanitizeMiddlewareNonJSONPassesThrough(t *testing.T) {
 }
 
 func TestCSRFExcludePaths(t *testing.T) {
-	handler := CSRFMiddleware([]string{"/api/v1/rsvp/public/", "/api/v1/auth/"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := CSRFMiddleware([]string{"/api/v1/rsvp/public/", "/api/v1/auth/magic-link", "/api/v1/auth/verify"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -252,7 +252,7 @@ func TestCSRFExcludePaths(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code, "excluded RSVP path should bypass CSRF")
 
-	// POST to excluded auth path should bypass CSRF.
+	// POST to excluded pre-auth path should bypass CSRF.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/auth/magic-link", nil)
 	rr2 := httptest.NewRecorder()
 	handler.ServeHTTP(rr2, req2)
