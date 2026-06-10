@@ -8,6 +8,7 @@
 	import InviteCardPreview from '$lib/components/invite/InviteCardPreview.svelte';
 	import QuestionRenderer from '$lib/components/questions/QuestionRenderer.svelte';
 	import AddToCalendar from '$lib/components/ui/AddToCalendar.svelte';
+	import GuestFeedback from '$lib/components/GuestFeedback.svelte';
 
 	interface PublicInviteData {
 		event: PublicEvent;
@@ -51,8 +52,38 @@
 	let newComment = $state('');
 	let submittingComment = $state(false);
 	let commentError = $state('');
+	// IDs of comments posted by this guest in the current session — used to show
+	// the Delete affordance only on their own comments (the server enforces the rule).
+	let myCommentIds = $state<Set<string>>(new Set());
+	let deletingCommentId = $state('');
 
 	const token = $derived($page.params.token ?? '');
+
+	// A comment is "mine" if I posted it this session, or its author matches my
+	// submitted name (best-effort client-side hint; the server is authoritative).
+	function isMyComment(comment: PublicComment): boolean {
+		if (!rsvpToken) return false;
+		if (myCommentIds.has(comment.id)) return true;
+		return !!name.trim() && comment.authorName === name.trim();
+	}
+
+	async function deleteComment(commentId: string) {
+		deletingCommentId = commentId;
+		commentError = '';
+		try {
+			await api.request(`/comments/public/${commentId}`, {
+				method: 'DELETE',
+				headers: { 'X-RSVP-Token': rsvpToken }
+			});
+			comments = comments.filter((c) => c.id !== commentId);
+			myCommentIds.delete(commentId);
+		} catch (err) {
+			const apiErr = err as ApiError;
+			commentError = apiErr.message || 'Failed to delete comment.';
+		} finally {
+			deletingCommentId = '';
+		}
+	}
 
 	async function loadComments(append = false) {
 		commentsLoading = true;
@@ -86,6 +117,7 @@
 				body: JSON.stringify({ body: newComment.trim() })
 			});
 			comments = [result.data, ...comments];
+			myCommentIds = new Set(myCommentIds).add(result.data.id);
 			newComment = '';
 		} catch (err) {
 			const apiErr = err as ApiError;
@@ -739,7 +771,19 @@
 								<div class="border-b border-neutral-100 pb-3 last:border-0">
 									<div class="flex items-center justify-between mb-1">
 										<span class="text-sm font-medium text-neutral-900">{comment.authorName}</span>
-										<span class="text-xs text-neutral-400">{new Date(comment.createdAt).toLocaleDateString()}</span>
+										<div class="flex items-center gap-2">
+											<span class="text-xs text-neutral-400">{new Date(comment.createdAt).toLocaleDateString()}</span>
+											{#if isMyComment(comment)}
+												<button
+													type="button"
+													onclick={() => deleteComment(comment.id)}
+													disabled={deletingCommentId === comment.id}
+													class="text-xs text-neutral-400 hover:text-error transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+												>
+													{deletingCommentId === comment.id ? 'Deleting...' : 'Delete'}
+												</button>
+											{/if}
+										</div>
 									</div>
 									<p class="text-sm text-neutral-700 whitespace-pre-wrap">{comment.body}</p>
 								</div>
@@ -763,7 +807,8 @@
 		{/if}
 
 		<!-- Powered by -->
-		<div class="mt-8 text-center">
+		<div class="mt-8 flex flex-col items-center gap-2 text-center">
+			<GuestFeedback source={$page.url.pathname} />
 			<a href="/" class="text-xs text-neutral-400 hover:text-neutral-500 transition-colors">
 				Powered by OpenRSVP
 			</a>

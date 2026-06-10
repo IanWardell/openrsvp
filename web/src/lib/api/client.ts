@@ -177,6 +177,38 @@ class ApiClient {
 
 		return response.json();
 	}
+
+	/**
+	 * Fetch a file and trigger a browser download. Used for data exports where
+	 * the response is a file attachment rather than JSON.
+	 */
+	async download(path: string, fallbackName: string): Promise<void> {
+		const url = `${BASE_URL}${path}`;
+		const response = await fetch(url, { method: 'GET', credentials: 'include' });
+
+		if (!response.ok) {
+			const error: ApiError = await response.json().catch(() => ({
+				error: 'unknown',
+				message: response.statusText,
+				status: response.status
+			}));
+			throw error;
+		}
+
+		const disposition = response.headers.get('Content-Disposition') || '';
+		const match = disposition.match(/filename="?([^"]+)"?/);
+		const filename = match ? match[1] : fallbackName;
+
+		const blob = await response.blob();
+		const objectURL = URL.createObjectURL(blob);
+		const anchor = document.createElement('a');
+		anchor.href = objectURL;
+		anchor.download = filename;
+		document.body.appendChild(anchor);
+		anchor.click();
+		anchor.remove();
+		URL.revokeObjectURL(objectURL);
+	}
 }
 
 export const api = new ApiClient();

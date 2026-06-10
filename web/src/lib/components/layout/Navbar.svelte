@@ -68,6 +68,7 @@
 				</button>
 				{#if $currentUser}
 					<span class="text-sm text-neutral-600">{$currentUser.email}</span>
+					<Button variant="ghost" size="sm" href="/account">Account</Button>
 				{/if}
 				<Button variant="ghost" size="sm" href="/auth/logout">Logout</Button>
 			</div>
@@ -131,6 +132,12 @@
 				<div>
 					{#if $currentUser}
 						<p class="text-sm text-neutral-600 mb-2">{$currentUser.email}</p>
+						<a
+							href="/account"
+							class="block px-3 py-2 rounded-md text-sm font-medium text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100"
+						>
+							Account
+						</a>
 					{/if}
 					<a
 						href="/auth/logout"

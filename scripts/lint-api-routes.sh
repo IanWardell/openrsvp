@@ -49,6 +49,8 @@ extract_routes() {
   extract_routes comment      /comments
   extract_routes webhook      /webhooks
   extract_routes notification /notifications
+  extract_routes suppression    /unsubscribe
+  extract_routes instanceconfig /setup
 
   # Inline routes defined directly in router.go (not via handler.go).
   grep -E 'api\.(Get|Post|Put|Patch|Delete)\("/' "$ROOT/internal/server/router.go" 2>/dev/null | while IFS= read -r line; do
