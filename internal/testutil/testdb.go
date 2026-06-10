@@ -98,6 +98,11 @@ func newPostgresTestDB(t *testing.T, baseURL string) database.DB {
 	if err != nil {
 		t.Fatalf("open bootstrap postgres: %v", err)
 	}
+	// The bootstrap pool only runs CREATE/DROP SCHEMA, so a single connection is
+	// plenty. Capping it keeps total connections bounded when many test packages
+	// run in parallel against a postgres:16 server (default max_connections=100).
+	bootstrap.SetMaxOpenConns(1)
+	bootstrap.SetMaxIdleConns(1)
 	if err := bootstrap.Ping(); err != nil {
 		_ = bootstrap.Close()
 		t.Fatalf("ping bootstrap postgres: %v", err)
@@ -121,6 +126,11 @@ func newPostgresTestDB(t *testing.T, baseURL string) database.DB {
 		_ = bootstrap.Close()
 		t.Fatalf("open scoped postgres: %v", err)
 	}
+
+	// Cap the scoped pool so the aggregate connection count across all parallel
+	// test packages stays well under the postgres:16 default of 100.
+	scoped.Underlying().SetMaxOpenConns(4)
+	scoped.Underlying().SetMaxIdleConns(2)
 
 	if err := database.RunMigrations(scoped); err != nil {
 		_ = scoped.Close()

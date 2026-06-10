@@ -11,12 +11,12 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/sqlite/*.sql migrations/postgres/*.sql
 var migrationsFS embed.FS
 
 // RunMigrations applies all pending database migrations.
 func RunMigrations(db DB) error {
-	source, err := iofs.New(migrationsFS, "migrations")
+	source, err := iofs.New(migrationsFS, "migrations/"+db.Dialect())
 	if err != nil {
 		return fmt.Errorf("migration source: %w", err)
 	}
