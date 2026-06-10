@@ -65,7 +65,7 @@ func HoneypotMiddleware() func(http.Handler) http.Handler {
 				// Bot detected -- return a fake success response.
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(map[string]interface{}{
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
 					"data": map[string]string{
 						"message": "Success",
 					},

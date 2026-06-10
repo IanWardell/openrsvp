@@ -341,7 +341,7 @@ func (s *Service) GetLogsByEvent(ctx context.Context, eventID string) ([]*LogEnt
 	if err != nil {
 		return nil, fmt.Errorf("query notification logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var entries []*LogEntry
 	for rows.Next() {
@@ -357,15 +357,20 @@ func (s *Service) GetLogsByEvent(ctx context.Context, eventID string) ([]*LogEnt
 func scanLogEntry(row *sql.Row) (*LogEntry, error) {
 	var e LogEntry
 	var sentAt, deliveredAt, openedAt, clickedAt, bouncedAt, complaintAt sql.NullString
-	var messageID, bounceType, errText sql.NullString
+	var messageID, bounceType, errText, attendeeID sql.NullString
+	var createdAtStr string
 
-	err := row.Scan(&e.ID, &e.EventID, &e.AttendeeID, &e.Channel, &e.Provider,
+	// created_at is RFC3339 TEXT: scan into a string then parse. lib/pq cannot
+	// convert a TEXT column straight into time.Time (go-sqlite3 silently does).
+	// attendee_id is nullable (ON DELETE SET NULL), so scan via NullString.
+	err := row.Scan(&e.ID, &e.EventID, &attendeeID, &e.Channel, &e.Provider,
 		&e.Status, &e.DeliveryStatus, &errText,
 		&e.Recipient, &e.Subject, &messageID, &sentAt, &deliveredAt, &openedAt, &clickedAt,
-		&bouncedAt, &bounceType, &complaintAt, &e.CreatedAt)
+		&bouncedAt, &bounceType, &complaintAt, &createdAtStr)
 	if err != nil {
 		return nil, err
 	}
+	e.AttendeeID = attendeeID.String
 	e.Error = errText.String
 	e.MessageID = messageID.String
 	e.BounceType = bounceType.String
@@ -375,22 +380,26 @@ func scanLogEntry(row *sql.Row) (*LogEntry, error) {
 	e.ClickedAt = parseNullTime(clickedAt)
 	e.BouncedAt = parseNullTime(bouncedAt)
 	e.ComplaintAt = parseNullTime(complaintAt)
+	if t, err := time.Parse(time.RFC3339, createdAtStr); err == nil {
+		e.CreatedAt = t
+	}
 	return &e, nil
 }
 
 func scanLogEntryRow(rows *sql.Rows) (*LogEntry, error) {
 	var e LogEntry
 	var sentAt, deliveredAt, openedAt, clickedAt, bouncedAt, complaintAt sql.NullString
-	var messageID, bounceType, errText sql.NullString
+	var messageID, bounceType, errText, attendeeID sql.NullString
 	var createdAtStr string
 
-	err := rows.Scan(&e.ID, &e.EventID, &e.AttendeeID, &e.Channel, &e.Provider,
+	err := rows.Scan(&e.ID, &e.EventID, &attendeeID, &e.Channel, &e.Provider,
 		&e.Status, &e.DeliveryStatus, &errText,
 		&e.Recipient, &e.Subject, &messageID, &sentAt, &deliveredAt, &openedAt, &clickedAt,
 		&bouncedAt, &bounceType, &complaintAt, &createdAtStr)
 	if err != nil {
 		return nil, err
 	}
+	e.AttendeeID = attendeeID.String
 	e.Error = errText.String
 	e.MessageID = messageID.String
 	e.BounceType = bounceType.String

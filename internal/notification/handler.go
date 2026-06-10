@@ -102,7 +102,7 @@ func (h *Handler) handleTrackOpen(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "image/gif")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-	w.Write(transparentGIF)
+	_, _ = w.Write(transparentGIF)
 }
 
 // maxWebhookBody caps inbound webhook payload size to defend against abuse.
@@ -361,5 +361,5 @@ func (h *Handler) handleGetLog(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }

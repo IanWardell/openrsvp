@@ -63,7 +63,7 @@ func (s *Server) routes() *chi.Mux {
 		// Public app config (non-sensitive feature flags).
 		api.Get("/config", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
 					"smsEnabled": s.cfg.SMSEnabled(),
 				},
@@ -139,7 +139,7 @@ func (s *Server) routes() *chi.Mux {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
 	})
 }
@@ -157,7 +157,7 @@ func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Error().Err(err).Msg("health check: database unreachable")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":   "unavailable",
 			"database": "unreachable",
 		})
@@ -165,7 +165,7 @@ func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status":   "ok",
 		"database": "connected",
 	})
@@ -192,7 +192,7 @@ func (s *Server) mountStaticFiles(r *chi.Mux) {
 			f, err := staticFS.Open(path)
 			if err == nil {
 				info, statErr := f.Stat()
-				f.Close()
+				_ = f.Close()
 				if statErr == nil && !info.IsDir() {
 					// Vite-hashed assets are safe to cache forever.
 					if strings.HasPrefix(r.URL.Path, "/_app/immutable/") {
@@ -208,13 +208,13 @@ func (s *Server) mountStaticFiles(r *chi.Mux) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache")
 			w.WriteHeader(http.StatusOK)
-			w.Write(fallbackHTML)
+			_, _ = w.Write(fallbackHTML)
 		})
 	} else {
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"error": "not found",
 			})
 		})

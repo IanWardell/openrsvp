@@ -50,7 +50,7 @@ func (s *Store) loadEventStats(ctx context.Context, out *EventStats) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var status string
@@ -80,7 +80,7 @@ func (s *Store) loadAttendeeStats(ctx context.Context, out *AttendeeStats) error
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var status string
@@ -145,7 +145,9 @@ func (s *Store) loadFeatureAdoption(ctx context.Context, out *FeatureAdoption) e
 	for _, q := range queries {
 		var err error
 		if q.query == queries[0].query || q.query == queries[1].query {
-			err = s.db.QueryRowContext(ctx, q.query, true).Scan(q.dest)
+			// waitlist_enabled and comments_enabled are INTEGER (0/1) columns;
+			// bind 1 rather than a Go bool so lib/pq accepts it on Postgres.
+			err = s.db.QueryRowContext(ctx, q.query, 1).Scan(q.dest)
 		} else {
 			err = s.db.QueryRowContext(ctx, q.query).Scan(q.dest)
 		}
@@ -164,7 +166,7 @@ func (s *Store) loadNotificationStats(ctx context.Context, out *NotificationStat
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var status, deliveryStatus string

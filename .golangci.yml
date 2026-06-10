@@ -1,15 +1,14 @@
-# golangci-lint v2 configuration (used by golangci-lint-action v8).
-# Deliberately lenient: a conservative linter set so CI surfaces real issues
-# without failing on pre-existing style across the codebase. The lint job in CI
-# is also marked continue-on-error, so these findings are advisory.
+# golangci-lint v2 configuration. Run as a BLOCKING gate in CI via
+# golangci-lint-action v9 (see .github/workflows/ci.yml, `lint` job), pinned to
+# golangci-lint v2.12.2 whose binaries are built with go1.26.x and type-check the
+# go1.26 codebase cleanly. Findings FAIL the build.
+#
+# This gate is genuine: errcheck, govet, ineffassign, the staticcheck SA/ST
+# bug-and-style series, and unused all run with no codebase-wide suppressions.
+# Only two narrowly-scoped, single-file exclusions remain (ST1005, SA1019), plus
+# a disable of the staticcheck QF* quickfix category. Each is justified inline
+# below. Any NEW finding outside these fails the build.
 version: "2"
-
-run:
-  # Target Go 1.24 language semantics. The repo's go.mod declares a bleeding-edge
-  # toolchain (go1.26.3); without this, golangci-lint (whose binary is built with
-  # an older Go) aborts with "the Go language version used to build golangci-lint
-  # is lower than the targeted Go version". Pinning the target sidesteps that.
-  go: "1.24"
 
 linters:
   default: none
@@ -19,6 +18,46 @@ linters:
     - errcheck
     - ineffassign
     - unused
+  settings:
+    staticcheck:
+      # This list = golangci-lint's built-in default staticcheck check set
+      # (which disables the noisy ST1000/ST1003/ST1016/ST1020-22 naming/comment
+      # rules) PLUS an explicit -QF1012. QF* are non-bug "quickfix" suggestions,
+      # not defect detection; QF1012 ("use fmt.Fprintf instead of
+      # WriteString(fmt.Sprintf(...))") fires ~46 times in the SMTP/template
+      # builders, where switching to Fprintf would only trade a never-failing
+      # bytes.Buffer.WriteString for a (n, error) return that then needs explicit
+      # error-ignoring — strictly noisier. The SA (bug) series stays fully on.
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -QF1012
+  exclusions:
+    rules:
+      # staticcheck ST1005: the error string "Event is at capacity" is
+      # capitalized intentionally. It is matched verbatim by
+      # isRSVPValidationError (internal/rsvp/handler.go) to classify it as a
+      # safe, user-facing API message, and the same wording is shown in the
+      # frontend. Lowercasing it would change client-facing error text and
+      # require updating the matcher in lockstep — a behavior change, out of
+      # scope for a lint-hygiene pass.
+      - linters: [staticcheck]
+        path: internal/rsvp/service\.go
+        text: "ST1005:"
+      # staticcheck SA1019: chi middleware.RealIP is deprecated, but its
+      # behavior is security-relevant (client-IP extraction feeding rate
+      # limiting / honeypot, gated on TRUSTED_PROXIES). Keep the current
+      # behavior unchanged.
+      # TODO: migrate off middleware.RealIP once chi ships a clear,
+      # equivalent replacement for trusted-proxy-aware IP resolution.
+      - linters: [staticcheck]
+        path: internal/server/router\.go
+        text: "SA1019:"
 
 issues:
   # Show all findings rather than truncating per-linter/per-file.

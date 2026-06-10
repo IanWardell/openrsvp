@@ -40,7 +40,7 @@ func createGitHubIssue(ctx context.Context, token, repo, title, body string, lab
 	if err != nil {
 		return fmt.Errorf("github api request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("github api returned status %d", resp.StatusCode)

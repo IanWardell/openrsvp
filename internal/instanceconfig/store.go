@@ -25,7 +25,7 @@ func (s *Store) GetAll(ctx context.Context) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := make(map[string]string)
 	for rows.Next() {

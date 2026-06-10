@@ -12,19 +12,19 @@ import (
 
 // Handler provides HTTP handlers for admin statistics endpoints.
 type Handler struct {
-	service        *Service
-	authMiddleware func(http.Handler) http.Handler
+	service         *Service
+	authMiddleware  func(http.Handler) http.Handler
 	adminMiddleware func(http.Handler) http.Handler
-	logger         zerolog.Logger
+	logger          zerolog.Logger
 }
 
 // NewHandler creates a new stats Handler.
 func NewHandler(service *Service, authMiddleware func(http.Handler) http.Handler, adminMiddleware func(http.Handler) http.Handler, logger zerolog.Logger) *Handler {
 	return &Handler{
-		service:        service,
-		authMiddleware: authMiddleware,
+		service:         service,
+		authMiddleware:  authMiddleware,
 		adminMiddleware: adminMiddleware,
-		logger:         logger,
+		logger:          logger,
 	}
 }
 
@@ -44,11 +44,11 @@ func (h *Handler) handleGetStats(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error().Err(err).Str("error_code", ref).Msg("failed to get instance stats")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "an internal error occurred (ref: " + ref + ")"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "an internal error occurred (ref: " + ref + ")"})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]any{"data": stats})
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": stats})
 }

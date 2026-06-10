@@ -215,7 +215,7 @@ func (h *Handler) handleCalendarDownload(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition",
 		fmt.Sprintf(`attachment; filename="%s.ics"`, slugify(data.Title)))
-	w.Write([]byte(icsContent))
+	_, _ = w.Write([]byte(icsContent))
 }
 
 func (h *Handler) handleExportCSV(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +286,7 @@ func (h *Handler) handleExportCSV(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf(`attachment; filename="%s"`, filename))
 
 	// UTF-8 BOM for Excel compatibility.
-	w.Write([]byte{0xEF, 0xBB, 0xBF})
+	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF})
 
 	writer := csv.NewWriter(w)
 
@@ -295,7 +295,7 @@ func (h *Handler) handleExportCSV(w http.ResponseWriter, r *http.Request) {
 	if exportData != nil {
 		header = append(header, exportData.Labels...)
 	}
-	writer.Write(header)
+	_ = writer.Write(header)
 
 	for _, a := range attendees {
 		email := ""
@@ -332,7 +332,7 @@ func (h *Handler) handleExportCSV(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		writer.Write(row)
+		_ = writer.Write(row)
 	}
 
 	writer.Flush()
@@ -528,14 +528,14 @@ func isRSVPValidationError(err error) bool {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, errCode, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":   errCode,
 		"message": message,
 	})

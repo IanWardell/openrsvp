@@ -52,7 +52,7 @@ func (s *CoHostStore) FindByEventID(ctx context.Context, eventID string) ([]*CoH
 	if err != nil {
 		return nil, fmt.Errorf("find co-hosts by event: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var cohosts []*CoHost
 	for rows.Next() {
@@ -132,7 +132,7 @@ func (s *CoHostStore) FindCohostedEventIDs(ctx context.Context, organizerID stri
 	if err != nil {
 		return nil, fmt.Errorf("find co-hosted event IDs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {

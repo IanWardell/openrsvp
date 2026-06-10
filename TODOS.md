@@ -20,12 +20,6 @@
 - **Depends on:** Setup wizard (Phase 1 of Distribution Playbook) must ship first. **Setup wizard shipped in v1.6.0 — this TODO is now unblocked.**
 - **Added:** 2026-03-26 via /plan-eng-review
 
-### PostgreSQL Placeholder Compatibility (P1)
-- **What:** Make PostgreSQL actually work. Rewrite `?` SQL placeholders to `$N` (including the raw `*sql.Tx` transactional paths), add a Postgres leg to the CI matrix, and add Postgres support to the test `testutil` env helpers.
-- **Why:** The README and compose files advertise Postgres, but `lib/pq` requires `$1, $2, …` placeholders while every store uses `?`. Queries fail under Postgres today, so the option is non-functional. SQLite is the only supported/tested database until this lands.
-- **Context:** Surfaced during the v1.6.0 audit. Documented as a known limitation in the README. Either centralize placeholder rewriting at the query layer or generate dialect-specific SQL; the tx paths need the same treatment, not just the store helpers.
-- **Added:** 2026-06-10
-
 ### Webhook Provider Signature Verification (P2)
 - **What:** Verify inbound delivery webhook signatures for SendGrid and SES before recording bounce/complaint events.
 - **Why:** The inbound delivery webhooks (`POST /api/v1/notifications/webhooks/sendgrid|ses`, shipped in v1.6.0) are unauthenticated, so a third party could forge delivery events. SendGrid signs with an Ed25519 public key; SES uses SNS message signatures.
@@ -36,10 +30,4 @@
 - **What:** Implement a click-tracking redirect endpoint so `EMAIL_CLICK_TRACKING_ENABLED` does something.
 - **Why:** The `EMAIL_CLICK_TRACKING_ENABLED` config flag is reserved but unimplemented. Open tracking shipped in v1.6.0; click tracking needs a redirect endpoint that rewrites email links, records the click, then 302s to the destination.
 - **Context:** Mirror the open-tracking pixel pattern. Keep it gated behind the existing flag (default off).
-- **Added:** 2026-06-10
-
-### Re-gate golangci-lint and govulncheck in CI (P2)
-- **What:** Restore golangci-lint and govulncheck as blocking CI checks. Both are advisory (non-failing) as of v1.6.0.
-- **Why:** golangci-lint v2.1.0 panics in `go/types` when analyzing the go1.26 codebase (upstream tooling lag); govulncheck flags freshly-published stdlib advisories (GO-2026-5037/5039) not yet patched in any released Go toolchain. Neither is fixable in-repo.
-- **Context:** Once a go1.26-compatible golangci-lint release can be pinned, remove the `|| echo ::warning::` soft-fail in `.github/workflows/ci.yml` and pin the new version. Re-gate govulncheck after the next Go point-release clears the stdlib advisories. `go vet` remains the active static-analysis gate meanwhile.
 - **Added:** 2026-06-10

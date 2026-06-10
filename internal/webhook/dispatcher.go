@@ -173,7 +173,7 @@ func (d *Dispatcher) deliver(ctx context.Context, wh *Webhook, delivery *Deliver
 
 		// Read response body (capped at maxResponseBodySize).
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		statusCode := resp.StatusCode
 		delivery.ResponseStatus = &statusCode

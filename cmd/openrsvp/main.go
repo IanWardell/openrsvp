@@ -42,7 +42,7 @@ func main() {
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to connect to database")
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	logger.Info().Str("dialect", db.Dialect()).Msg("database connected")
 

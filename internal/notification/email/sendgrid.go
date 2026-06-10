@@ -153,7 +153,7 @@ func (p *SendGridProvider) Send(ctx context.Context, msg *notification.Message) 
 	if err != nil {
 		return nil, fmt.Errorf("sendgrid request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// SendGrid returns 202 Accepted on success.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

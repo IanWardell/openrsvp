@@ -77,7 +77,7 @@ func (s *Store) FindByEventID(ctx context.Context, eventID string, cursor string
 	if err != nil {
 		return nil, fmt.Errorf("find comments by event: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var comments []*Comment
 	for rows.Next() {
@@ -107,7 +107,7 @@ func (s *Store) FindAllByEventID(ctx context.Context, eventID string) ([]*Commen
 	if err != nil {
 		return nil, fmt.Errorf("find all comments by event: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var comments []*Comment
 	for rows.Next() {

@@ -66,7 +66,7 @@ func (s *Store) FindByEventID(ctx context.Context, eventID string) ([]*Message, 
 	if err != nil {
 		return nil, fmt.Errorf("find messages by event: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanMessages(rows)
 }
@@ -85,7 +85,7 @@ func (s *Store) FindByEventAndRecipient(ctx context.Context, eventID, recipientT
 	if err != nil {
 		return nil, fmt.Errorf("find messages by event and recipient: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanMessages(rows)
 }

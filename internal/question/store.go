@@ -62,7 +62,7 @@ func (s *Store) FindByEventID(ctx context.Context, eventID string) ([]*Question,
 	if err != nil {
 		return nil, fmt.Errorf("find questions by event: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var questions []*Question
 	for rows.Next() {
@@ -149,7 +149,7 @@ func (s *Store) UpdateSortOrders(ctx context.Context, eventID string, orderedIDs
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -224,7 +224,7 @@ func (s *Store) FindAnswersByAttendeeID(ctx context.Context, attendeeID string) 
 	if err != nil {
 		return nil, fmt.Errorf("find answers by attendee: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var answers []*Answer
 	for rows.Next() {
@@ -253,7 +253,7 @@ func (s *Store) FindAnswersByEventID(ctx context.Context, eventID string) (map[s
 	if err != nil {
 		return nil, fmt.Errorf("find answers by event: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string][]*Answer)
 	for rows.Next() {

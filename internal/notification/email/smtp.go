@@ -142,8 +142,8 @@ func writeAlternativeParts(buf *bytes.Buffer, msg *notification.Message, boundar
 	buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 	buf.WriteString("\r\n")
 	qpw := quotedprintable.NewWriter(buf)
-	qpw.Write([]byte(plain))
-	qpw.Close()
+	_, _ = qpw.Write([]byte(plain))
+	_ = qpw.Close()
 	buf.WriteString("\r\n")
 
 	if msg.Body != "" && msg.Body != plain {
@@ -152,8 +152,8 @@ func writeAlternativeParts(buf *bytes.Buffer, msg *notification.Message, boundar
 		buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 		buf.WriteString("\r\n")
 		qpw = quotedprintable.NewWriter(buf)
-		qpw.Write([]byte(msg.Body))
-		qpw.Close()
+		_, _ = qpw.Write([]byte(msg.Body))
+		_ = qpw.Close()
 		buf.WriteString("\r\n")
 	}
 }
@@ -189,7 +189,7 @@ func (p *SMTPProvider) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("smtp health check dial: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Attempt SMTP handshake.
 	host := p.host
@@ -201,7 +201,7 @@ func (p *SMTPProvider) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("smtp health check handshake: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	if err := client.Hello("localhost"); err != nil {
 		return fmt.Errorf("smtp health check hello: %w", err)

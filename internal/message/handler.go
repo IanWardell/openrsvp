@@ -29,13 +29,13 @@ type EventOwnershipChecker func(ctx context.Context, eventID, organizerID string
 
 // Handler holds HTTP handlers for message endpoints.
 type Handler struct {
-	service            *Service
-	authMiddleware     func(http.Handler) http.Handler
-	rsvpRateLimiterMw  func(http.Handler) http.Handler
-	organizerFrom      OrganizerFromCtx
-	attendeeFromToken  AttendeeFromToken
-	checkEventOwner    EventOwnershipChecker
-	logger             zerolog.Logger
+	service           *Service
+	authMiddleware    func(http.Handler) http.Handler
+	rsvpRateLimiterMw func(http.Handler) http.Handler
+	organizerFrom     OrganizerFromCtx
+	attendeeFromToken AttendeeFromToken
+	checkEventOwner   EventOwnershipChecker
+	logger            zerolog.Logger
 }
 
 // NewHandler creates a new message Handler.
@@ -49,13 +49,13 @@ func NewHandler(
 	logger zerolog.Logger,
 ) *Handler {
 	return &Handler{
-		service:            service,
-		authMiddleware:     authMiddleware,
-		rsvpRateLimiterMw:  rsvpRateLimiterMw,
-		organizerFrom:      organizerFrom,
-		attendeeFromToken:  attendeeFromToken,
-		checkEventOwner:    checkEventOwner,
-		logger:             logger,
+		service:           service,
+		authMiddleware:    authMiddleware,
+		rsvpRateLimiterMw: rsvpRateLimiterMw,
+		organizerFrom:     organizerFrom,
+		attendeeFromToken: attendeeFromToken,
+		checkEventOwner:   checkEventOwner,
+		logger:            logger,
 	}
 }
 
@@ -215,14 +215,14 @@ func (h *Handler) handleAttendeeList(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, errCode, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":   errCode,
 		"message": message,
 	})

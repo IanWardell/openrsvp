@@ -157,7 +157,7 @@ func (j *ReminderJob) findTargetAttendees(ctx context.Context, eventID, targetGr
 	if err != nil {
 		return nil, fmt.Errorf("query attendees: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var attendees []attendeeTarget
 	for rows.Next() {
