@@ -37,3 +37,9 @@
 - **Why:** The `EMAIL_CLICK_TRACKING_ENABLED` config flag is reserved but unimplemented. Open tracking shipped in v1.6.0; click tracking needs a redirect endpoint that rewrites email links, records the click, then 302s to the destination.
 - **Context:** Mirror the open-tracking pixel pattern. Keep it gated behind the existing flag (default off).
 - **Added:** 2026-06-10
+
+### Re-gate golangci-lint and govulncheck in CI (P2)
+- **What:** Restore golangci-lint and govulncheck as blocking CI checks. Both are advisory (non-failing) as of v1.6.0.
+- **Why:** golangci-lint v2.1.0 panics in `go/types` when analyzing the go1.26 codebase (upstream tooling lag); govulncheck flags freshly-published stdlib advisories (GO-2026-5037/5039) not yet patched in any released Go toolchain. Neither is fixable in-repo.
+- **Context:** Once a go1.26-compatible golangci-lint release can be pinned, remove the `|| echo ::warning::` soft-fail in `.github/workflows/ci.yml` and pin the new version. Re-gate govulncheck after the next Go point-release clears the stdlib advisories. `go vet` remains the active static-analysis gate meanwhile.
+- **Added:** 2026-06-10
