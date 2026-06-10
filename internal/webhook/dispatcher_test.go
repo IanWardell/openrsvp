@@ -433,7 +433,7 @@ func TestSSRFSafeDialer_NoRebindWindow(t *testing.T) {
 	t.Parallel()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	_, port, err := net.SplitHostPort(ln.Addr().String())
 	require.NoError(t, err)

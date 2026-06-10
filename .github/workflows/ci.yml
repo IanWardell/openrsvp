@@ -57,6 +57,38 @@ jobs:
           fail_ci_if_error: false
       - run: go build -o /dev/null ./cmd/openrsvp
 
+  backend-postgres:
+    name: Backend (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: openrsvp
+          POSTGRES_PASSWORD: openrsvp
+          POSTGRES_DB: openrsvp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openrsvp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgres://openrsvp:openrsvp@localhost:5432/openrsvp_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.25'
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc
+      - run: go mod download
+      - name: Create frontend placeholder for go:embed
+        run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
+      - name: Run tests against PostgreSQL
+        run: go test -race ./...
+
   lint:
     name: Lint (golangci-lint)
     runs-on: ubuntu-latest
@@ -64,44 +96,39 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.25'
+          go-version: '1.26.4'
       - name: Create frontend placeholder for go:embed
         run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
-      - name: golangci-lint (advisory)
-        # Advisory only: golangci-lint v2.1.0 cannot yet type-check a go1.26
-        # codebase (it panics inside go/types). `go vet` in the backend job is the
-        # active static-analysis gate. Re-enable golangci-lint as a blocking check
-        # once a go1.26-compatible release can be pinned. Tracked in TODOS.md.
-        run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.0
-          "$(go env GOPATH)/bin/golangci-lint" run \
-            || echo "::warning::golangci-lint advisory run did not pass (pending go1.26 tooling support)"
+      - name: golangci-lint
+        # Blocking gate. golangci-lint v2.12.2 binaries are built with go1.26.x
+        # and type-check the go1.26 codebase cleanly (the old go/types panic on
+        # v2.1.0 is gone). Findings fail the build; see .golangci.yml for the
+        # enabled linters and the documented pre-existing burn-down allow-list.
+        uses: golangci/golangci-lint-action@db582008a42febd596419635a5abc9d9815daa9c # v9.2.1
+        with:
+          version: v2.12.2
 
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
-    # Run on the toolchain the project actually targets (go1.26.3). On older Go
-    # the scan flags two crypto/x509 stdlib advisories that are already patched
-    # in 1.26.3; GOTOOLCHAIN=local pins the analysis to the installed version.
+    # Run on the toolchain the project actually targets. go1.26.4 (2026-06-02)
+    # patches the stdlib advisories GO-2026-5037 (crypto/x509) and GO-2026-5039
+    # (net/textproto) that earlier point releases flagged; GOTOOLCHAIN=local pins
+    # the analysis to the installed version so the scan reflects 1.26.4.
     env:
       GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.26.3'
+          go-version: '1.26.4'
       - name: Create frontend placeholder for go:embed
         run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run govulncheck (advisory)
-        # Advisory: govulncheck flags freshly-published standard-library advisories
-        # that are not yet patched in any released Go toolchain (e.g. GO-2026-5037,
-        # GO-2026-5039). Those clear only with a Go point-release and cannot be
-        # fixed in-repo, so the scan surfaces them without gating the build.
-        run: |
-          govulncheck ./... \
-            || echo "::warning::govulncheck reported advisories (likely unpatched stdlib; clears on the next Go release)"
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+      - name: Run govulncheck
+        # Blocking gate. Reported vulnerabilities fail the build.
+        run: govulncheck ./...
 
   docker:
     name: Docker Build

@@ -143,7 +143,7 @@ func TestHoneypotBotDetected(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code, "should return fake 200 for bot")
 	var resp map[string]interface{}
-	json.Unmarshal(rr.Body.Bytes(), &resp)
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
 	assert.Contains(t, resp, "data", "should contain fake success data")
 }
 
@@ -191,7 +191,7 @@ func TestSanitizeMiddlewareStripsHTMLTags(t *testing.T) {
 	var receivedBody map[string]string
 
 	handler := SanitizeMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&receivedBody)
+		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -213,7 +213,7 @@ func TestSanitizeMiddlewareNestedObjects(t *testing.T) {
 	var receivedBody map[string]interface{}
 
 	handler := SanitizeMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&receivedBody)
+		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 		w.WriteHeader(http.StatusOK)
 	}))
 

@@ -240,7 +240,7 @@ func (h *Handler) handleExportMe(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="openrsvp-export.json"`)
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(doc)
+	_ = json.NewEncoder(w).Encode(doc)
 }
 
 // handleDeleteMe handles DELETE /api/v1/auth/me. It permanently deletes the
@@ -294,5 +294,5 @@ func extractToken(r *http.Request) string {
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }

@@ -273,7 +273,7 @@ func newCaptureSMTP(t *testing.T) *captureSMTP {
 	return s
 }
 
-func (s *captureSMTP) Close() { s.ln.Close() }
+func (s *captureSMTP) Close() { _ = s.ln.Close() }
 
 func (s *captureSMTP) Data() string {
 	<-s.done
@@ -288,12 +288,12 @@ func (s *captureSMTP) serve() {
 		close(s.done)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	r := bufio.NewReader(conn)
 	w := bufio.NewWriter(conn)
 
-	write := func(s string) { w.WriteString(s); w.Flush() }
+	write := func(s string) { _, _ = w.WriteString(s); _ = w.Flush() }
 	write("220 capture ESMTP\r\n")
 
 	var body bytes.Buffer

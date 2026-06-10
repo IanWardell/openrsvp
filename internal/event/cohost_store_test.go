@@ -332,46 +332,6 @@ func TestEventList_MergesAndSortsByDate(t *testing.T) {
 	assert.Equal(t, ev2.ID, events[1].ID)
 }
 
-// --- Handler Tests ---
-
-// setupCoHostHandler creates an event handler with co-host support for testing.
-func setupCoHostHandler(t *testing.T, org *auth.Organizer) (
-	http.Handler, *Service, *CoHostStore, *auth.Store,
-) {
-	t.Helper()
-	db := testutil.NewTestDB(t)
-	cfg := testutil.TestConfig()
-
-	store := NewStore(db)
-	cohostStore := NewCoHostStore(db)
-	authStore := auth.NewStore(db)
-	svc := NewService(store, cfg.DefaultRetentionDays)
-	svc.SetCoHostStore(cohostStore)
-
-	authMW := testutil.FakeAuthMiddleware(func(ctx context.Context) context.Context {
-		return auth.ContextWithOrganizer(ctx, org)
-	})
-
-	lookupByEmail := OrganizerLookupByEmail(func(ctx context.Context, email string) (string, string, error) {
-		o, err := authStore.FindOrganizerByEmail(ctx, email)
-		if err != nil {
-			return "", "", err
-		}
-		if o == nil {
-			return "", "", nil
-		}
-		return o.ID, o.Name, nil
-	})
-
-	handler := NewHandler(
-		svc, authMW, organizerFromCtx(), zerolog.Nop(),
-		WithCoHostStore(cohostStore),
-		WithOrganizerLookup(lookupByEmail),
-	)
-
-	return handler.Routes(), svc, cohostStore, authStore
-}
-
 func TestHandleAddCoHost_Success(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	cfg := testutil.TestConfig()

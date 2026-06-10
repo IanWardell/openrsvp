@@ -70,7 +70,7 @@ func (p *TwilioProvider) Send(ctx context.Context, msg *notification.Message) (*
 	if err != nil {
 		return nil, fmt.Errorf("twilio request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
@@ -118,7 +118,7 @@ func (p *TwilioProvider) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("twilio health check request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))

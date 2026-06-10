@@ -67,7 +67,7 @@ func (s *Store) FindByEventID(ctx context.Context, eventID string) ([]*Attendee,
 	if err != nil {
 		return nil, fmt.Errorf("find attendees by event: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var attendees []*Attendee
 	for rows.Next() {
@@ -136,7 +136,7 @@ func (s *Store) GetStats(ctx context.Context, eventID string) (*RSVPStats, error
 	if err != nil {
 		return nil, fmt.Errorf("get rsvp stats: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	stats := &RSVPStats{}
 	for rows.Next() {
@@ -193,7 +193,7 @@ func (s *Store) GetPublicAttendance(ctx context.Context, eventID string) (int, [
 	if err != nil {
 		return 0, nil, fmt.Errorf("get public attendance names: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var names []string
 	for rows.Next() {

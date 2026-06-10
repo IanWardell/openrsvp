@@ -110,17 +110,17 @@ type OrganizerLookupByEmail func(ctx context.Context, email string) (id, name st
 
 // Handler holds HTTP handlers for event endpoints.
 type Handler struct {
-	service             *Service
-	cohostStore         *CoHostStore
-	authMiddleware      func(http.Handler) http.Handler
-	organizerFrom       OrganizerFromCtx
-	lookupByEmail       OrganizerLookupByEmail
-	notifyCoHost        func(ctx context.Context, coHostEmail, eventID, addedByOrganizerID string)
-	logger              zerolog.Logger
-	maxCoHosts          int
-	notifyThrottle      *coHostNotifyThrottle
-	cohostMutexes       sync.Map // per-event mutex keyed by eventID
-	cohostRateLimiter   *coHostRateLimiter
+	service           *Service
+	cohostStore       *CoHostStore
+	authMiddleware    func(http.Handler) http.Handler
+	organizerFrom     OrganizerFromCtx
+	lookupByEmail     OrganizerLookupByEmail
+	notifyCoHost      func(ctx context.Context, coHostEmail, eventID, addedByOrganizerID string)
+	logger            zerolog.Logger
+	maxCoHosts        int
+	notifyThrottle    *coHostNotifyThrottle
+	cohostMutexes     sync.Map // per-event mutex keyed by eventID
+	cohostRateLimiter *coHostRateLimiter
 }
 
 // NewHandler creates a new event Handler.
@@ -134,8 +134,8 @@ func NewHandler(
 	h := &Handler{
 		service:           service,
 		authMiddleware:    authMiddleware,
-		organizerFrom:    organizerFrom,
-		logger:           logger,
+		organizerFrom:     organizerFrom,
+		logger:            logger,
 		maxCoHosts:        10, // default, overridable via WithMaxCoHosts
 		notifyThrottle:    newCoHostNotifyThrottle(),
 		cohostRateLimiter: newCoHostRateLimiter(10, 1*time.Minute),
@@ -376,7 +376,7 @@ func (h *Handler) handleCancel(w http.ResponseWriter, r *http.Request) {
 		NotifyAttendees *bool `json:"notifyAttendees"`
 	}
 	// Body is optional; ignore decode errors for empty bodies.
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 	notifyAttendees := req.NotifyAttendees != nil && *req.NotifyAttendees
 
 	ev, err := h.service.Cancel(r.Context(), eventID, organizerID, notifyAttendees)
@@ -737,14 +737,14 @@ func isEventValidationError(err error) bool {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, errCode, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":   errCode,
 		"message": message,
 	})

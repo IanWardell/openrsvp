@@ -70,7 +70,7 @@ func (s *ReminderStore) FindByEventID(ctx context.Context, eventID string) ([]*R
 	if err != nil {
 		return nil, fmt.Errorf("find reminders by event: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var reminders []*Reminder
 	for rows.Next() {
@@ -100,7 +100,7 @@ func (s *ReminderStore) FindDue(ctx context.Context) ([]*Reminder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("find due reminders: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var reminders []*Reminder
 	for rows.Next() {

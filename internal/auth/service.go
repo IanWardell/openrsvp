@@ -157,7 +157,7 @@ func (s *Service) VerifyMagicLink(ctx context.Context, rawToken string) (*AuthRe
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if err := s.store.MarkMagicLinkUsedTx(ctx, tx, ml.ID); err != nil {
 		return nil, fmt.Errorf("mark magic link used: %w", err)

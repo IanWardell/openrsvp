@@ -69,7 +69,7 @@ func (s *Store) FindByEventID(ctx context.Context, eventID string) ([]*Webhook, 
 	if err != nil {
 		return nil, fmt.Errorf("find webhooks by event: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var webhooks []*Webhook
 	for rows.Next() {
@@ -98,7 +98,7 @@ func (s *Store) FindEnabledByEventAndType(ctx context.Context, eventID, eventTyp
 	if err != nil {
 		return nil, fmt.Errorf("find enabled webhooks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var webhooks []*Webhook
 	for rows.Next() {
@@ -252,7 +252,7 @@ func (s *Store) FindDeliveriesByWebhook(ctx context.Context, webhookID string, l
 	if err != nil {
 		return nil, fmt.Errorf("find deliveries by webhook: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var deliveries []*Delivery
 	for rows.Next() {

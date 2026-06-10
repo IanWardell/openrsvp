@@ -67,7 +67,7 @@ func (s *SeriesStore) FindByOrganizerID(ctx context.Context, organizerID string)
 	if err != nil {
 		return nil, fmt.Errorf("find series by organizer: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var series []*EventSeries
 	for rows.Next() {
@@ -93,7 +93,7 @@ func (s *SeriesStore) FindAllActive(ctx context.Context) ([]*EventSeries, error)
 	if err != nil {
 		return nil, fmt.Errorf("find all active series: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var series []*EventSeries
 	for rows.Next() {

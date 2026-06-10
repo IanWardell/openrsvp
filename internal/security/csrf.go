@@ -231,7 +231,7 @@ func CSRFMiddleware(excludePaths []string) func(http.Handler) http.Handler {
 func csrfError(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":   "csrf_validation_failed",
 		"message": "CSRF token missing or invalid.",
 	})

@@ -95,7 +95,7 @@ func (j *CleanupJob) warnExpiring(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("query expiring events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	warningThreshold := 7 * 24 * time.Hour
 
@@ -138,7 +138,7 @@ func (j *CleanupJob) warnExpiring(ctx context.Context) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate expiring events: %w", err)
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	// Process warnings after closing the cursor (important for single-conn DBs).
 	for _, ev := range toWarn {
@@ -180,7 +180,7 @@ func (j *CleanupJob) deleteExpired(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("query expired events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var expiredIDs []string
 	var expiredTitles []string
@@ -209,7 +209,7 @@ func (j *CleanupJob) deleteExpired(ctx context.Context) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate expired events: %w", err)
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	if len(expiredIDs) == 0 {
 		return nil
@@ -220,7 +220,7 @@ func (j *CleanupJob) deleteExpired(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	for i, id := range expiredIDs {
 		// Clean up associated resources (uploaded files, etc.) before deletion.

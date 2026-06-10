@@ -133,7 +133,7 @@ func (s *TrackingService) GetEmailStats(ctx context.Context, eventID string) (*E
 	if err != nil {
 		return nil, fmt.Errorf("query email stats: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var status, deliveryStatus string

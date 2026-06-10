@@ -19,6 +19,6 @@ func getFrontendFS() fs.FS {
 	if err != nil {
 		return nil
 	}
-	f.Close()
+	_ = f.Close()
 	return sub
 }

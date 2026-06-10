@@ -19,7 +19,7 @@ func (h *Handler) handleImportTemplate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", `attachment; filename="guest-import-template.csv"`)
-	w.Write([]byte(csvTemplateContent))
+	_, _ = w.Write([]byte(csvTemplateContent))
 }
 
 // handleImportPreview accepts a CSV file upload, parses and validates it,
@@ -47,7 +47,7 @@ func (h *Handler) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "CSV file is required (form field: file)")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	preview, err := h.service.ParseCSVPreview(r.Context(), eventID, organizerID, file)
 	if err != nil {

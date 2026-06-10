@@ -399,7 +399,6 @@ func TestDuplicateEventForbidden(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
-func intPtr(i int) *int    { return &i }
 
 func TestCreateEventDefaultVisibility(t *testing.T) {
 	svc, authStore := setupEvent(t)
