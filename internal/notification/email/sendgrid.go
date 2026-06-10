@@ -16,18 +16,23 @@ import (
 
 // SendGridProvider sends emails via the SendGrid v3 API using raw HTTP.
 type SendGridProvider struct {
-	apiKey string
-	from   string
-	client *http.Client
+	apiKey  string
+	from    string
+	client  *http.Client
+	baseURL string
 }
+
+// sendGridDefaultURL is the production SendGrid v3 send endpoint.
+const sendGridDefaultURL = "https://api.sendgrid.com/v3/mail/send"
 
 // NewSendGridProvider creates a new SendGridProvider with the given API key and
 // sender address.
 func NewSendGridProvider(apiKey, from string) *SendGridProvider {
 	return &SendGridProvider{
-		apiKey: apiKey,
-		from:   from,
-		client: &http.Client{Timeout: 30 * time.Second},
+		apiKey:  apiKey,
+		from:    from,
+		client:  &http.Client{Timeout: 30 * time.Second},
+		baseURL: sendGridDefaultURL,
 	}
 }
 
@@ -136,7 +141,7 @@ func (p *SendGridProvider) Send(ctx context.Context, msg *notification.Message) 
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://api.sendgrid.com/v3/mail/send", bytes.NewReader(body))
+		p.baseURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("sendgrid create request: %w", err)
 	}

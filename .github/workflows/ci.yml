@@ -24,14 +24,16 @@ jobs:
       - run: cd web && npm ci
       - run: cd web && npm run check
       - run: cd web && npm run build
+      # NOTE: `npm run test:visual` (Playwright visual regression) is intentionally
+      # NOT run here: it requires a running backend/server and is not headless-safe
+      # in CI without standing up the full app, so it would reliably fail.
 
   backend:
-    name: Backend (Go ${{ matrix.go }} / ${{ matrix.db }})
+    name: Backend (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ['1.23', '1.24']
-        db: ['sqlite']
+        go: ['1.24', '1.25']
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -43,8 +45,50 @@ jobs:
       - name: Create frontend placeholder for go:embed
         run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
       - run: go vet ./...
-      - run: go test -race -v ./...
+      - name: Run tests with coverage
+        run: go test -race -v -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Print total coverage
+        run: go tool cover -func=coverage.out | tail -1
+      - name: Upload coverage to Codecov
+        if: matrix.go == '1.25'
+        uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
       - run: go build -o /dev/null ./cmd/openrsvp
+
+  lint:
+    name: Lint (golangci-lint)
+    runs-on: ubuntu-latest
+    # Non-blocking: the project notes a go1.26 toolchain; this guards against the
+    # linter binary failing to parse newer Go syntax or flagging pre-existing
+    # style. It surfaces findings without blocking unrelated PRs.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.25'
+      - name: Create frontend placeholder for go:embed
+        run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
+      - uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8.0.0
+        with:
+          version: v2.1.0
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.25'
+      - name: Create frontend placeholder for go:embed
+        run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck
+        run: govulncheck ./...
 
   docker:
     name: Docker Build

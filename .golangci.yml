@@ -1,0 +1,19 @@
+# golangci-lint v2 configuration (used by golangci-lint-action v8).
+# Deliberately lenient: a conservative linter set so CI surfaces real issues
+# without failing on pre-existing style across the codebase. The lint job in CI
+# is also marked continue-on-error, so these findings are advisory.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unused
+
+issues:
+  # Show all findings rather than truncating per-linter/per-file.
+  max-issues-per-linter: 0
+  max-same-issues: 0

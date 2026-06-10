@@ -51,6 +51,13 @@ func NewDispatcher(store *Store, logger zerolog.Logger) *Dispatcher {
 		},
 	}
 
+	return newDispatcherWithClient(store, logger, client)
+}
+
+// newDispatcherWithClient builds a Dispatcher around a caller-supplied HTTP
+// client. NewDispatcher uses it with the hardened SSRF-safe client; tests use
+// it to substitute a client that can reach an httptest.Server on loopback.
+func newDispatcherWithClient(store *Store, logger zerolog.Logger, client *http.Client) *Dispatcher {
 	return &Dispatcher{
 		store:  store,
 		client: client,

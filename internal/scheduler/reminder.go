@@ -193,11 +193,12 @@ type eventInfo struct {
 func (j *ReminderJob) lookupEvent(ctx context.Context, eventID string) (*eventInfo, error) {
 	var info eventInfo
 	var description, timezone *string
-	var endDate *time.Time
+	var eventDate string
+	var endDate *string
 	err := j.db.QueryRowContext(ctx,
 		`SELECT id, title, description, event_date, end_date, location, timezone, share_token FROM events WHERE id = ?`,
 		eventID,
-	).Scan(&info.id, &info.title, &description, &info.eventDate, &endDate, &info.location, &timezone, &info.shareToken)
+	).Scan(&info.id, &info.title, &description, &eventDate, &endDate, &info.location, &timezone, &info.shareToken)
 	if err != nil {
 		return nil, fmt.Errorf("lookup event %s: %w", eventID, err)
 	}
@@ -207,7 +208,19 @@ func (j *ReminderJob) lookupEvent(ctx context.Context, eventID string) (*eventIn
 	if timezone != nil {
 		info.timezone = *timezone
 	}
-	info.endDate = endDate
+	// Timestamps are stored as RFC3339 TEXT; parse them like every other
+	// scanner in the codebase rather than relying on driver time conversion.
+	info.eventDate, err = time.Parse(time.RFC3339, eventDate)
+	if err != nil {
+		return nil, fmt.Errorf("parse event_date for event %s: %w", eventID, err)
+	}
+	if endDate != nil && *endDate != "" {
+		parsed, perr := time.Parse(time.RFC3339, *endDate)
+		if perr != nil {
+			return nil, fmt.Errorf("parse end_date for event %s: %w", eventID, perr)
+		}
+		info.endDate = &parsed
+	}
 	return &info, nil
 }
 
