@@ -45,8 +45,8 @@ func (s *Store) Create(ctx context.Context, e *Event) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.OrganizerID, e.Title, e.Description, eventDate, endDate,
 		e.Location, e.Timezone, e.RetentionDays, e.Status, e.ShareToken, e.ContactRequirement,
-		e.ShowHeadcount, e.ShowGuestList, rsvpDeadline, e.MaxCapacity, e.WaitlistEnabled, e.CommentsEnabled,
-		e.SeriesID, e.SeriesIndex, e.SeriesOverride, now, now,
+		boolToInt(e.ShowHeadcount), boolToInt(e.ShowGuestList), rsvpDeadline, e.MaxCapacity, boolToInt(e.WaitlistEnabled), boolToInt(e.CommentsEnabled),
+		e.SeriesID, e.SeriesIndex, boolToInt(e.SeriesOverride), now, now,
 	)
 	if err != nil {
 		return fmt.Errorf("create event: %w", err)
@@ -85,7 +85,7 @@ func (s *Store) FindByOrganizerID(ctx context.Context, organizerID string) ([]*E
 	if err != nil {
 		return nil, fmt.Errorf("find events by organizer: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []*Event
 	for rows.Next() {
@@ -122,7 +122,7 @@ func (s *Store) FindByIDs(ctx context.Context, ids []string) ([]*Event, error) {
 	if err != nil {
 		return nil, fmt.Errorf("find events by IDs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []*Event
 	for rows.Next() {
@@ -160,9 +160,9 @@ func (s *Store) Update(ctx context.Context, e *Event) error {
 		`UPDATE events SET title = ?, description = ?, event_date = ?, end_date = ?, location = ?, timezone = ?, retention_days = ?, status = ?, contact_requirement = ?, show_headcount = ?, show_guest_list = ?, rsvp_deadline = ?, max_capacity = ?, waitlist_enabled = ?, comments_enabled = ?, series_id = ?, series_index = ?, series_override = ?, updated_at = ?
 		 WHERE id = ?`,
 		e.Title, e.Description, eventDate, endDate, e.Location, e.Timezone,
-		e.RetentionDays, e.Status, e.ContactRequirement, e.ShowHeadcount, e.ShowGuestList,
-		rsvpDeadline, e.MaxCapacity, e.WaitlistEnabled, e.CommentsEnabled,
-		e.SeriesID, e.SeriesIndex, e.SeriesOverride, now, e.ID,
+		e.RetentionDays, e.Status, e.ContactRequirement, boolToInt(e.ShowHeadcount), boolToInt(e.ShowGuestList),
+		rsvpDeadline, e.MaxCapacity, boolToInt(e.WaitlistEnabled), boolToInt(e.CommentsEnabled),
+		e.SeriesID, e.SeriesIndex, boolToInt(e.SeriesOverride), now, e.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update event: %w", err)
@@ -189,14 +189,15 @@ func scanEvent(row *sql.Row) (*Event, error) {
 	var maxCapacity sql.NullInt64
 	var seriesID sql.NullString
 	var seriesIndex sql.NullInt64
+	var showHeadcount, showGuestList, waitlistEnabled, commentsEnabled, seriesOverride int
 
 	err := row.Scan(
 		&e.ID, &e.OrganizerID, &e.Title, &e.Description,
 		&eventDate, &endDate, &e.Location, &e.Timezone,
 		&e.RetentionDays, &e.Status, &e.ShareToken, &e.ContactRequirement,
-		&e.ShowHeadcount, &e.ShowGuestList,
-		&rsvpDeadline, &maxCapacity, &e.WaitlistEnabled, &e.CommentsEnabled,
-		&seriesID, &seriesIndex, &e.SeriesOverride,
+		&showHeadcount, &showGuestList,
+		&rsvpDeadline, &maxCapacity, &waitlistEnabled, &commentsEnabled,
+		&seriesID, &seriesIndex, &seriesOverride,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -205,6 +206,12 @@ func scanEvent(row *sql.Row) (*Event, error) {
 		}
 		return nil, fmt.Errorf("scan event: %w", err)
 	}
+
+	e.ShowHeadcount = showHeadcount != 0
+	e.ShowGuestList = showGuestList != 0
+	e.WaitlistEnabled = waitlistEnabled != 0
+	e.CommentsEnabled = commentsEnabled != 0
+	e.SeriesOverride = seriesOverride != 0
 
 	if seriesID.Valid {
 		e.SeriesID = &seriesID.String
@@ -225,19 +232,26 @@ func scanEventRow(rows *sql.Rows) (*Event, error) {
 	var maxCapacity sql.NullInt64
 	var seriesID sql.NullString
 	var seriesIndex sql.NullInt64
+	var showHeadcount, showGuestList, waitlistEnabled, commentsEnabled, seriesOverride int
 
 	err := rows.Scan(
 		&e.ID, &e.OrganizerID, &e.Title, &e.Description,
 		&eventDate, &endDate, &e.Location, &e.Timezone,
 		&e.RetentionDays, &e.Status, &e.ShareToken, &e.ContactRequirement,
-		&e.ShowHeadcount, &e.ShowGuestList,
-		&rsvpDeadline, &maxCapacity, &e.WaitlistEnabled, &e.CommentsEnabled,
-		&seriesID, &seriesIndex, &e.SeriesOverride,
+		&showHeadcount, &showGuestList,
+		&rsvpDeadline, &maxCapacity, &waitlistEnabled, &commentsEnabled,
+		&seriesID, &seriesIndex, &seriesOverride,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan event row: %w", err)
 	}
+
+	e.ShowHeadcount = showHeadcount != 0
+	e.ShowGuestList = showGuestList != 0
+	e.WaitlistEnabled = waitlistEnabled != 0
+	e.CommentsEnabled = commentsEnabled != 0
+	e.SeriesOverride = seriesOverride != 0
 
 	if seriesID.Valid {
 		e.SeriesID = &seriesID.String
@@ -303,7 +317,7 @@ func (s *Store) FindFutureBySeriesID(ctx context.Context, seriesID string) ([]*E
 	if err != nil {
 		return nil, fmt.Errorf("find future events by series: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []*Event
 	for rows.Next() {
@@ -341,7 +355,7 @@ func (s *Store) FindBySeriesID(ctx context.Context, seriesID string) ([]*Event, 
 	if err != nil {
 		return nil, fmt.Errorf("find events by series: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []*Event
 	for rows.Next() {

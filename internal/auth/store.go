@@ -29,7 +29,7 @@ func NewStore(db database.DB) *Store {
 }
 
 // BeginTx starts a new database transaction.
-func (s *Store) BeginTx(ctx context.Context) (*sql.Tx, error) {
+func (s *Store) BeginTx(ctx context.Context) (database.Tx, error) {
 	return s.db.BeginTx(ctx, nil)
 }
 
@@ -49,7 +49,7 @@ func (s *Store) FindOrganizerByID(ctx context.Context, id string) (*Organizer, e
 }
 
 // FindOrganizerByIDTx retrieves an organizer by their ID within a transaction.
-func (s *Store) FindOrganizerByIDTx(ctx context.Context, tx *sql.Tx, id string) (*Organizer, error) {
+func (s *Store) FindOrganizerByIDTx(ctx context.Context, tx database.Tx, id string) (*Organizer, error) {
 	return findOrganizerByID(ctx, tx, id)
 }
 
@@ -157,7 +157,7 @@ func (s *Store) MarkMagicLinkUsed(ctx context.Context, id string) error {
 }
 
 // MarkMagicLinkUsedTx sets the used_at timestamp for a magic link within a transaction.
-func (s *Store) MarkMagicLinkUsedTx(ctx context.Context, tx *sql.Tx, id string) error {
+func (s *Store) MarkMagicLinkUsedTx(ctx context.Context, tx database.Tx, id string) error {
 	return markMagicLinkUsed(ctx, tx, id)
 }
 
@@ -181,7 +181,7 @@ func (s *Store) CreateSession(ctx context.Context, tokenHash, organizerID string
 }
 
 // CreateSessionTx creates a new session within a transaction and returns it.
-func (s *Store) CreateSessionTx(ctx context.Context, tx *sql.Tx, tokenHash, organizerID string, expiresAt time.Time) (*Session, error) {
+func (s *Store) CreateSessionTx(ctx context.Context, tx database.Tx, tokenHash, organizerID string, expiresAt time.Time) (*Session, error) {
 	return createSession(ctx, tx, tokenHash, organizerID, expiresAt)
 }
 
@@ -353,7 +353,7 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Grandchildren / records reachable only through an event the organizer
 	// owns. Scoped via a subselect on events.organizer_id so no other
@@ -421,7 +421,7 @@ func (s *Store) organizerEventIDs(ctx context.Context, organizerID string) ([]st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var ids []string
 	for rows.Next() {
@@ -463,7 +463,7 @@ func queryRows(ctx context.Context, db database.DB, query string, args ...any) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	cols, err := rows.Columns()
 	if err != nil {
