@@ -4,6 +4,13 @@
 # is also marked continue-on-error, so these findings are advisory.
 version: "2"
 
+run:
+  # Target Go 1.24 language semantics. The repo's go.mod declares a bleeding-edge
+  # toolchain (go1.26.3); without this, golangci-lint (whose binary is built with
+  # an older Go) aborts with "the Go language version used to build golangci-lint
+  # is lower than the targeted Go version". Pinning the target sidesteps that.
+  go: "1.24"
+
 linters:
   default: none
   enable:

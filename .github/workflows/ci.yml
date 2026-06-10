@@ -78,11 +78,16 @@ jobs:
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
+    # Run on the toolchain the project actually targets (go1.26.3). On older Go
+    # the scan flags two crypto/x509 stdlib advisories that are already patched
+    # in 1.26.3; GOTOOLCHAIN=local pins the analysis to the installed version.
+    env:
+      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.25'
+          go-version: '1.26.3'
       - name: Create frontend placeholder for go:embed
         run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
       - name: Install govulncheck
