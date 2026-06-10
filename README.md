@@ -22,7 +22,7 @@ A self-hosted, privacy-first alternative to Evite. Create beautiful event invita
 - 🤖 **Bot Protection** — Honeypot fields and IP-based rate limiting
 - 📈 **Instance Admin** — Aggregate dashboard for instance-wide statistics (events, guests, RSVP rates, notification health, feature adoption) — privacy-first, no individual tracking
 - 🏠 **Self-Hosted** — Single Docker container, you own your data
-- 🗄️ **SQLite** — SQLite by default and the only supported database today. PostgreSQL support is experimental and not functional in this release (see [Known limitations](#known-limitations))
+- 🗄️ **SQLite or PostgreSQL** — SQLite by default; PostgreSQL is fully supported and CI-tested. The full test suite runs against both
 
 ## 🚀 Quick Start
 
@@ -43,9 +43,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-### With PostgreSQL (experimental)
-
-> **Heads up:** PostgreSQL support is experimental and not functional in this release. Use SQLite for production. See [Known limitations](#known-limitations).
+### With PostgreSQL
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
@@ -86,6 +84,10 @@ make build
 
 # Output: bin/openrsvp
 ```
+
+### 🗄️ Database & Migrations
+
+The full test suite runs against both SQLite and PostgreSQL in CI. Migrations live in per-dialect directories, `internal/database/migrations/sqlite` and `internal/database/migrations/postgres`, because some schema changes (for example CHECK-constraint edits) differ between the two engines. When you add a migration, add it to both directories.
 
 ### 📁 Project Structure
 
@@ -427,8 +429,6 @@ docker compose exec postgres pg_dump -U openrsvp openrsvp > backup.sql
 
 ### ⚠️ Known limitations
 
-**PostgreSQL is experimental and not functional in this release.** The data stores use `?` SQL placeholders with no rewrite layer, and transactional paths use raw `*sql.Tx`. `lib/pq` expects `$1, $2, …` placeholders, so queries fail under Postgres. **SQLite is the supported and tested database.** A Postgres compatibility fix (placeholder rewriting plus the transactional paths) is tracked as a follow-up. The PostgreSQL configuration and docs are kept here for that work; do not run Postgres in production yet.
-
 **Inbound delivery webhooks are unauthenticated.** The SendGrid/SES delivery webhooks record bounces and complaints but do not yet verify provider signatures. Restrict access at the reverse proxy if you expose them. Signature verification is a tracked follow-up.
 
 ### 🔑 Operator note: rotate pre-v1.5.1 Postgres credentials
@@ -441,12 +441,23 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 |-------|-----------|
 | Backend | Go with chi router |
 | Frontend | SvelteKit + Tailwind CSS |
-| Database | SQLite (supported) / PostgreSQL (experimental, not functional) |
+| Database | SQLite or PostgreSQL (both supported, both CI-tested) |
 | Auth | Magic links (passwordless) |
 | Notifications | SMTP, SendGrid, SES, Twilio, Vonage, SNS |
 | Deployment | Docker (multi-stage, single binary) |
 
 ## 📝 Changelog
+
+### v1.7.0 (2026-06-10)
+
+**Database:**
+- PostgreSQL is now functional. A `?` → `$N` placeholder rewriter covers the stores and the transactional (`*sql.Tx`) paths, per-column boolean handling works with `lib/pq`, and a notification timestamp scan fix lands the last edge case
+- Migrations split into per-dialect directories (`internal/database/migrations/sqlite`, `internal/database/migrations/postgres`) so CHECK-constraint changes use `ALTER CONSTRAINT` on Postgres
+- CI runs the entire test suite against `postgres:16` alongside SQLite
+
+**CI:**
+- Re-gate `golangci-lint` and `govulncheck` as blocking. golangci-lint runs on the go1.26-built action (v2.12.2) without panicking, and govulncheck on go1.26.4 clears GO-2026-5037/5039
+- Burned down ~176 pre-existing lint findings so the gate is genuine
 
 ### v1.6.0 (2026-06-10)
 
