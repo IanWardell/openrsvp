@@ -197,7 +197,10 @@
 		}
 
 		const hasEmail = !!email.trim();
-		const hasPhone = !!phone.trim();
+		// Strip the separators people type ("+32 479 12 34 56") so the value
+		// matches the E.164 format the API requires.
+		const normalizedPhone = phone.replace(/[\s\-.()   ‐-—−/]/g, '');
+		const hasPhone = !!normalizedPhone;
 
 		// When SMS is disabled, email is always required.
 		if (!$smsEnabled && !hasEmail) {
@@ -229,7 +232,7 @@
 			const payload: Record<string, unknown> = {
 				name: name.trim(),
 				email: email.trim(),
-				phone: phone.trim() || undefined,
+				phone: normalizedPhone || undefined,
 				rsvpStatus,
 				dietaryNotes: dietaryNotes.trim() || undefined,
 				plusOnes
@@ -557,9 +560,13 @@
 								type="tel"
 								required={phoneRequired}
 								bind:value={phone}
-								placeholder="+1 (555) 123-4567"
+								placeholder="+14155552671"
+								aria-describedby="rsvp-phone-hint"
 								class="w-full rounded-md border border-neutral-300 px-4 py-2.5 text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
 							/>
+							<p id="rsvp-phone-hint" class="mt-1.5 text-xs text-neutral-500">
+								Include your country code (e.g. +1 for the US, +32 for Belgium).
+							</p>
 						</div>
 
 						<!-- RSVP Status -->

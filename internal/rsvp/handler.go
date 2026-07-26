@@ -500,28 +500,16 @@ func slugify(s string) string {
 	return slug
 }
 
-// isRSVPValidationError returns true if the error is a known, safe validation
-// message from the RSVP service that can be returned to the client.
+// isRSVPValidationError returns true if the error is a client input problem
+// whose message is safe to return verbatim.
+//
+// This used to be an allowlist of message prefixes, which failed open to HTTP
+// 500 for every message not on the list — real guests were blocked from RSVPing
+// by an unactionable "an internal error occurred (ref: ...)". The service now
+// tags these with ErrValidation instead, so new validation messages are covered
+// automatically.
 func isRSVPValidationError(err error) bool {
-	msg := err.Error()
-	safeMessages := []string{
-		"name is required",
-		"rsvpStatus is required",
-		"invalid rsvpStatus:",
-		"invalid contactMethod:",
-		"sms contact method is not available",
-		"RSVPs are closed",
-		"email is required",
-		"phone is required",
-		"email or phone is required",
-		"Event is at capacity",
-	}
-	for _, safe := range safeMessages {
-		if strings.HasPrefix(msg, safe) {
-			return true
-		}
-	}
-	return false
+	return errcode.IsValidation(err)
 }
 
 // writeJSON writes a JSON response with the given status code.

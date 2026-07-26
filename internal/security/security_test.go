@@ -306,6 +306,22 @@ func TestValidatePhoneInvalid(t *testing.T) {
 	assert.False(t, ValidatePhone("+0123"))
 }
 
+func TestNormalizePhoneStripsSeparators(t *testing.T) {
+	assert.Equal(t, "+14155552671", NormalizePhone("+1 (415) 555-2671"))
+	assert.Equal(t, "+32479123456", NormalizePhone("+32 479 12 34 56"))
+	assert.Equal(t, "+33612345678", NormalizePhone("+33.6.12.34.56.78"))
+	assert.Equal(t, "+14155552671", NormalizePhone("  +14155552671  "))
+	// Non-breaking spaces are common from mobile keyboards and pasted contacts.
+	assert.Equal(t, "+32479123456", NormalizePhone("+32 479 123456"))
+}
+
+func TestNormalizePhoneLeavesUnrecoverableInputAlone(t *testing.T) {
+	// Normalization strips separators only; it must not invent a country code.
+	assert.Equal(t, "0479123456", NormalizePhone("0479 12 34 56"))
+	assert.False(t, ValidatePhone(NormalizePhone("0479 12 34 56")))
+	assert.Equal(t, "", NormalizePhone(""))
+}
+
 func TestSanitizeStrict(t *testing.T) {
 	assert.Equal(t, "Hello World", SanitizeStrict("<h1>Hello</h1> <script>alert(1)</script>World"))
 	assert.Equal(t, "plain text", SanitizeStrict("plain text"))

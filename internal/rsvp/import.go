@@ -87,7 +87,7 @@ func (s *Service) ParseCSVPreview(ctx context.Context, eventID, organizerID stri
 		return nil, fmt.Errorf("event not found")
 	}
 	if ev.Status != "published" {
-		return nil, fmt.Errorf("event must be published to import guests")
+		return nil, validationErrorf("event must be published to import guests")
 	}
 
 	// Read all bytes to strip BOM before passing to CSV reader.
@@ -108,24 +108,24 @@ func (s *Service) ParseCSVPreview(ctx context.Context, eventID, organizerID stri
 	// Parse header row.
 	header, err := reader.Read()
 	if err != nil {
-		return nil, fmt.Errorf("CSV file is empty or has no header row")
+		return nil, validationErrorf("CSV file is empty or has no header row")
 	}
 
 	colMap := mapColumns(header)
 
 	// Name column is required.
 	if _, ok := colMap["name"]; !ok {
-		return nil, fmt.Errorf("CSV must contain a 'Name' column")
+		return nil, validationErrorf("CSV must contain a 'Name' column")
 	}
 
 	// Read all data rows.
 	records, err := reader.ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("parse CSV: %w", err)
+		return nil, validationErrorf("parse CSV: %v", err)
 	}
 
 	if len(records) > maxImportRows {
-		return nil, fmt.Errorf("CSV exceeds maximum of %d rows", maxImportRows)
+		return nil, validationErrorf("CSV exceeds maximum of %d rows", maxImportRows)
 	}
 
 	// Fetch existing attendees for duplicate detection.
@@ -242,7 +242,7 @@ func (s *Service) ExecuteCSVImport(ctx context.Context, eventID, organizerID str
 		return nil, fmt.Errorf("event not found")
 	}
 	if ev.Status != "published" {
-		return nil, fmt.Errorf("event must be published to import guests")
+		return nil, validationErrorf("event must be published to import guests")
 	}
 
 	// Fetch existing attendees for duplicate detection.

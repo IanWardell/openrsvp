@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/yannkr/openrsvp/internal/calendar"
+	"github.com/yannkr/openrsvp/internal/errcode"
 	"github.com/yannkr/openrsvp/internal/event"
 	"github.com/yannkr/openrsvp/internal/invite"
 	"github.com/yannkr/openrsvp/internal/notification/templates"
@@ -28,6 +29,13 @@ const (
 	maxPhoneLen        = 20
 	maxDietaryNotesLen = 500
 )
+
+// validationErrorf builds a client-safe validation error. See
+// errcode.ErrValidation for why classification uses a sentinel rather than
+// matching on message text.
+func validationErrorf(format string, args ...any) error {
+	return errcode.Validationf(format, args...)
+}
 
 // NotifyRSVPFunc is called after an RSVP is submitted or updated to send a
 // confirmation email to the attendee. It runs asynchronously.
@@ -69,9 +77,9 @@ type GetAnswersFunc func(ctx context.Context, attendeeID string) (any, error)
 
 // ExportQuestionsData holds structured data for CSV export of custom questions.
 type ExportQuestionsData struct {
-	Labels           []string                       // Question labels (for CSV header columns)
-	QuestionIDs      []string                       // Question IDs in order
-	AnswersByAttendee map[string]map[string]string   // attendeeID -> questionID -> answer
+	Labels            []string                     // Question labels (for CSV header columns)
+	QuestionIDs       []string                     // Question IDs in order
+	AnswersByAttendee map[string]map[string]string // attendeeID -> questionID -> answer
 }
 
 // GetExportQuestionsFunc returns question labels and answers for CSV export.
@@ -79,21 +87,21 @@ type GetExportQuestionsFunc func(ctx context.Context, eventID string) (*ExportQu
 
 // Service contains the business logic for the RSVP system.
 type Service struct {
-	store                     *Store
-	eventService              *event.Service
-	inviteService             *invite.Service
-	notifyRSVP                NotifyRSVPFunc
-	notifyWaitlistPromotion   NotifyWaitlistPromotionFunc
-	sendEmail                 EmailSender
-	smsEnabled                bool
-	baseURL                   string
-	validateAnswers           ValidateAndSaveAnswersFunc
-	listQuestions             ListQuestionsFunc
-	getAnswers                GetAnswersFunc
-	getExportQuestions        GetExportQuestionsFunc
-	onImportInvite            ImportInviteFunc
-	logger                    zerolog.Logger
-	notifSem                  chan struct{} // bounds concurrent notification goroutines
+	store                   *Store
+	eventService            *event.Service
+	inviteService           *invite.Service
+	notifyRSVP              NotifyRSVPFunc
+	notifyWaitlistPromotion NotifyWaitlistPromotionFunc
+	sendEmail               EmailSender
+	smsEnabled              bool
+	baseURL                 string
+	validateAnswers         ValidateAndSaveAnswersFunc
+	listQuestions           ListQuestionsFunc
+	getAnswers              GetAnswersFunc
+	getExportQuestions      GetExportQuestionsFunc
+	onImportInvite          ImportInviteFunc
+	logger                  zerolog.Logger
+	notifSem                chan struct{} // bounds concurrent notification goroutines
 }
 
 // NewService creates a new RSVP Service.
@@ -196,8 +204,8 @@ type PublicAttendance struct {
 type PublicInviteData struct {
 	Event      *event.PublicEvent `json:"event"`
 	Invite     *invite.InviteCard `json:"invite"`
-	Attendance *PublicAttendance   `json:"attendance,omitempty"`
-	Questions  any                 `json:"questions,omitempty"`
+	Attendance *PublicAttendance  `json:"attendance,omitempty"`
+	Questions  any                `json:"questions,omitempty"`
 }
 
 // GetPublicInvite retrieves event and invite card data by share token for the
@@ -280,45 +288,52 @@ func (s *Service) GetPublicInvite(ctx context.Context, shareToken string) (*Publ
 // matching attendee already exists.
 func (s *Service) SubmitRSVP(ctx context.Context, shareToken string, req RSVPRequest) (*Attendee, error) {
 	if req.Name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, validationErrorf("name is required")
 	}
 	if len(req.Name) > maxNameLen {
-		return nil, fmt.Errorf("name must be %d characters or less", maxNameLen)
+		return nil, validationErrorf("name must be %d characters or less", maxNameLen)
 	}
 	if req.Email != nil && *req.Email != "" && len(*req.Email) > maxEmailLen {
-		return nil, fmt.Errorf("email must be %d characters or less", maxEmailLen)
+		return nil, validationErrorf("email must be %d characters or less", maxEmailLen)
+	}
+	// Normalize before validating and storing, so a guest can type the
+	// separators every phone UI shows ("+32 479 12 34 56") and still be stored
+	// as bare E.164.
+	if req.Phone != nil && *req.Phone != "" {
+		normalized := security.NormalizePhone(*req.Phone)
+		req.Phone = &normalized
 	}
 	if req.Phone != nil && *req.Phone != "" && len(*req.Phone) > maxPhoneLen {
-		return nil, fmt.Errorf("phone must be %d characters or less", maxPhoneLen)
+		return nil, validationErrorf("phone must be %d characters or less", maxPhoneLen)
 	}
 	if len(req.DietaryNotes) > maxDietaryNotesLen {
-		return nil, fmt.Errorf("dietaryNotes must be %d characters or less", maxDietaryNotesLen)
+		return nil, validationErrorf("dietaryNotes must be %d characters or less", maxDietaryNotesLen)
 	}
 	if req.Email != nil && *req.Email != "" && !security.ValidateEmail(*req.Email) {
-		return nil, fmt.Errorf("invalid email format")
+		return nil, validationErrorf("invalid email format")
 	}
 	if req.Phone != nil && *req.Phone != "" && !security.ValidatePhone(*req.Phone) {
-		return nil, fmt.Errorf("invalid phone format: must be E.164 (e.g. +14155552671)")
+		return nil, validationErrorf("invalid phone format: include your country code (e.g. +14155552671)")
 	}
 	if req.RSVPStatus == "" {
-		return nil, fmt.Errorf("rsvpStatus is required")
+		return nil, validationErrorf("rsvpStatus is required")
 	}
 	// Public submissions may only use attending, maybe, or declined.
 	// waitlisted is assigned server-side when at capacity; pending is internal.
 	if req.RSVPStatus != "attending" && req.RSVPStatus != "maybe" && req.RSVPStatus != "declined" {
-		return nil, fmt.Errorf("invalid rsvpStatus: must be attending, maybe, or declined")
+		return nil, validationErrorf("invalid rsvpStatus: must be attending, maybe, or declined")
 	}
 	if req.PlusOnes < 0 {
-		return nil, fmt.Errorf("plusOnes must not be negative")
+		return nil, validationErrorf("plusOnes must not be negative")
 	}
 	if req.ContactMethod == "" {
 		req.ContactMethod = "email"
 	}
 	if req.ContactMethod != "email" && req.ContactMethod != "sms" {
-		return nil, fmt.Errorf("invalid contactMethod: must be email or sms")
+		return nil, validationErrorf("invalid contactMethod: must be email or sms")
 	}
 	if !s.smsEnabled && req.ContactMethod == "sms" {
-		return nil, fmt.Errorf("sms contact method is not available when SMS is disabled")
+		return nil, validationErrorf("sms contact method is not available when SMS is disabled")
 	}
 	if req.RSVPStatus == "declined" {
 		req.PlusOnes = 0
@@ -335,7 +350,7 @@ func (s *Service) SubmitRSVP(ctx context.Context, shareToken string, req RSVPReq
 
 	// Check RSVP deadline.
 	if ev.RSVPDeadline != nil && time.Now().UTC().After(*ev.RSVPDeadline) {
-		return nil, fmt.Errorf("RSVPs are closed")
+		return nil, validationErrorf("RSVPs are closed")
 	}
 
 	// Validate contact info based on the event's contact requirement.
@@ -344,28 +359,28 @@ func (s *Service) SubmitRSVP(ctx context.Context, shareToken string, req RSVPReq
 	switch ev.ContactRequirement {
 	case "email":
 		if !hasEmail {
-			return nil, fmt.Errorf("email is required")
+			return nil, validationErrorf("email is required")
 		}
 	case "phone":
 		if !hasPhone {
-			return nil, fmt.Errorf("phone is required")
+			return nil, validationErrorf("phone is required")
 		}
 	case "email_and_phone":
 		if !hasEmail {
-			return nil, fmt.Errorf("email is required")
+			return nil, validationErrorf("email is required")
 		}
 		if !hasPhone {
-			return nil, fmt.Errorf("phone is required")
+			return nil, validationErrorf("phone is required")
 		}
 	default: // "email_or_phone"
 		if !hasEmail && !hasPhone {
-			return nil, fmt.Errorf("email or phone is required")
+			return nil, validationErrorf("email or phone is required")
 		}
 	}
 
 	// When SMS is disabled, email is always required regardless of contact requirement.
 	if !s.smsEnabled && !hasEmail {
-		return nil, fmt.Errorf("email is required")
+		return nil, validationErrorf("email is required")
 	}
 
 	// Acquire per-event mutex for capacity checks.
@@ -407,7 +422,7 @@ func (s *Service) SubmitRSVP(ctx context.Context, shareToken string, req RSVPReq
 				if ev.WaitlistEnabled {
 					req.RSVPStatus = "waitlisted"
 				} else {
-					return nil, fmt.Errorf("Event is at capacity")
+					return nil, validationErrorf("Event is at capacity")
 				}
 			}
 		}
@@ -454,7 +469,7 @@ func (s *Service) SubmitRSVP(ctx context.Context, shareToken string, req RSVPReq
 			if ev.WaitlistEnabled {
 				req.RSVPStatus = "waitlisted"
 			} else {
-				return nil, fmt.Errorf("Event is at capacity")
+				return nil, validationErrorf("Event is at capacity")
 			}
 		}
 	}
@@ -619,22 +634,22 @@ func (s *Service) UpdateByToken(ctx context.Context, rsvpToken string, req Updat
 		return nil, fmt.Errorf("event not found")
 	}
 	if ev.RSVPDeadline != nil && time.Now().UTC().After(*ev.RSVPDeadline) {
-		return nil, fmt.Errorf("RSVPs are closed")
+		return nil, validationErrorf("RSVPs are closed")
 	}
 
 	// Public updates may only use attending, maybe, or declined.
 	if req.RSVPStatus != nil {
 		if *req.RSVPStatus != "attending" && *req.RSVPStatus != "maybe" && *req.RSVPStatus != "declined" {
-			return nil, fmt.Errorf("invalid rsvpStatus: must be attending, maybe, or declined")
+			return nil, validationErrorf("invalid rsvpStatus: must be attending, maybe, or declined")
 		}
 	}
 	if req.PlusOnes != nil && *req.PlusOnes < 0 {
-		return nil, fmt.Errorf("plusOnes must not be negative")
+		return nil, validationErrorf("plusOnes must not be negative")
 	}
 
 	// Prevent waitlisted guests from changing directly to attending.
 	if a.RSVPStatus == "waitlisted" && req.RSVPStatus != nil && *req.RSVPStatus == "attending" {
-		return nil, fmt.Errorf("waitlisted guests cannot change to attending directly")
+		return nil, validationErrorf("waitlisted guests cannot change to attending directly")
 	}
 
 	// Capacity enforcement for UpdateByToken.
@@ -658,7 +673,7 @@ func (s *Service) UpdateByToken(ctx context.Context, rsvpToken string, req Updat
 				newPlusOnes = *req.PlusOnes
 			}
 			if stats.AttendingHeadcount+1+newPlusOnes > *ev.MaxCapacity {
-				return nil, fmt.Errorf("Event is at capacity")
+				return nil, validationErrorf("Event is at capacity")
 			}
 		} else if req.PlusOnes != nil && *req.PlusOnes > a.PlusOnes {
 			// Already attending but increasing plus-ones.
@@ -668,7 +683,7 @@ func (s *Service) UpdateByToken(ctx context.Context, rsvpToken string, req Updat
 			}
 			additional := *req.PlusOnes - a.PlusOnes
 			if stats.AttendingHeadcount+additional > *ev.MaxCapacity {
-				return nil, fmt.Errorf("Event is at capacity")
+				return nil, validationErrorf("Event is at capacity")
 			}
 		}
 	} else if req.PlusOnes != nil && a.RSVPStatus == "attending" && ev.MaxCapacity != nil && *req.PlusOnes > a.PlusOnes {
@@ -679,21 +694,21 @@ func (s *Service) UpdateByToken(ctx context.Context, rsvpToken string, req Updat
 		}
 		additional := *req.PlusOnes - a.PlusOnes
 		if stats.AttendingHeadcount+additional > *ev.MaxCapacity {
-			return nil, fmt.Errorf("Event is at capacity")
+			return nil, validationErrorf("Event is at capacity")
 		}
 	}
 
 	// Validate field lengths and formats for UpdateByToken.
 	if req.Name != nil {
 		if *req.Name == "" {
-			return nil, fmt.Errorf("name is required")
+			return nil, validationErrorf("name is required")
 		}
 		if len(*req.Name) > maxNameLen {
-			return nil, fmt.Errorf("name must be %d characters or less", maxNameLen)
+			return nil, validationErrorf("name must be %d characters or less", maxNameLen)
 		}
 	}
 	if req.DietaryNotes != nil && len(*req.DietaryNotes) > maxDietaryNotesLen {
-		return nil, fmt.Errorf("dietaryNotes must be %d characters or less", maxDietaryNotesLen)
+		return nil, validationErrorf("dietaryNotes must be %d characters or less", maxDietaryNotesLen)
 	}
 
 	if req.Name != nil {
@@ -855,7 +870,7 @@ func (s *Service) UpdateAttendeeAsOrganizer(ctx context.Context, eventID, attend
 		return nil, fmt.Errorf("attendee does not belong to this event")
 	}
 	if req.PlusOnes != nil && *req.PlusOnes < 0 {
-		return nil, fmt.Errorf("plusOnes must not be negative")
+		return nil, validationErrorf("plusOnes must not be negative")
 	}
 
 	oldStatus := a.RSVPStatus
@@ -863,30 +878,32 @@ func (s *Service) UpdateAttendeeAsOrganizer(ctx context.Context, eventID, attend
 	// Validate field lengths and formats for organizer updates.
 	if req.Name != nil {
 		if *req.Name == "" {
-			return nil, fmt.Errorf("name is required")
+			return nil, validationErrorf("name is required")
 		}
 		if len(*req.Name) > maxNameLen {
-			return nil, fmt.Errorf("name must be %d characters or less", maxNameLen)
+			return nil, validationErrorf("name must be %d characters or less", maxNameLen)
 		}
 	}
 	if req.Email != nil && *req.Email != "" {
 		if len(*req.Email) > maxEmailLen {
-			return nil, fmt.Errorf("email must be %d characters or less", maxEmailLen)
+			return nil, validationErrorf("email must be %d characters or less", maxEmailLen)
 		}
 		if !security.ValidateEmail(*req.Email) {
-			return nil, fmt.Errorf("invalid email format")
+			return nil, validationErrorf("invalid email format")
 		}
 	}
 	if req.Phone != nil && *req.Phone != "" {
+		normalized := security.NormalizePhone(*req.Phone)
+		req.Phone = &normalized
 		if len(*req.Phone) > maxPhoneLen {
-			return nil, fmt.Errorf("phone must be %d characters or less", maxPhoneLen)
+			return nil, validationErrorf("phone must be %d characters or less", maxPhoneLen)
 		}
 		if !security.ValidatePhone(*req.Phone) {
-			return nil, fmt.Errorf("invalid phone format: must be E.164 (e.g. +14155552671)")
+			return nil, validationErrorf("invalid phone format: include your country code (e.g. +14155552671)")
 		}
 	}
 	if req.DietaryNotes != nil && len(*req.DietaryNotes) > maxDietaryNotesLen {
-		return nil, fmt.Errorf("dietaryNotes must be %d characters or less", maxDietaryNotesLen)
+		return nil, validationErrorf("dietaryNotes must be %d characters or less", maxDietaryNotesLen)
 	}
 
 	// Check capacity when promoting to "attending" status.
@@ -900,7 +917,7 @@ func (s *Service) UpdateAttendeeAsOrganizer(ctx context.Context, eventID, attend
 			newPlusOnes = *req.PlusOnes
 		}
 		if stats.AttendingHeadcount+1+newPlusOnes > *ev.MaxCapacity {
-			return nil, fmt.Errorf("Event is at capacity")
+			return nil, validationErrorf("Event is at capacity")
 		}
 	}
 
@@ -915,7 +932,7 @@ func (s *Service) UpdateAttendeeAsOrganizer(ctx context.Context, eventID, attend
 	}
 	if req.RSVPStatus != nil {
 		if !isValidRSVPStatus(*req.RSVPStatus) {
-			return nil, fmt.Errorf("invalid rsvpStatus: must be attending, maybe, declined, pending, or waitlisted")
+			return nil, validationErrorf("invalid rsvpStatus: must be attending, maybe, declined, pending, or waitlisted")
 		}
 		a.RSVPStatus = *req.RSVPStatus
 	}

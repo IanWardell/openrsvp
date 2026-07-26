@@ -349,6 +349,137 @@ func TestHandleSubmitRSVP_InvalidStatus(t *testing.T) {
 	assert.Contains(t, body["message"], "invalid rsvpStatus")
 }
 
+// TestHandleSubmitRSVP_ValidationErrorsReturn400 guards against validation
+// failures being reported as HTTP 500. Guests were blocked from RSVPing with an
+// unactionable "an internal error occurred (ref: ...)" message because
+// isRSVPValidationError used a hardcoded allowlist that omitted most messages.
+func TestHandleSubmitRSVP_ValidationErrorsReturn400(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    map[string]any
+		wantMsg string
+	}{
+		{
+			name:    "invalid phone format",
+			body:    map[string]any{"name": "Alice", "email": "alice@example.com", "phone": "0479123456", "rsvpStatus": "attending"},
+			wantMsg: "invalid phone format",
+		},
+		{
+			name:    "invalid email format",
+			body:    map[string]any{"name": "Alice", "email": "not-an-email", "rsvpStatus": "attending"},
+			wantMsg: "invalid email format",
+		},
+		{
+			name:    "negative plusOnes",
+			body:    map[string]any{"name": "Alice", "email": "alice@example.com", "rsvpStatus": "attending", "plusOnes": -1},
+			wantMsg: "plusOnes must not be negative",
+		},
+		{
+			name:    "name too long",
+			body:    map[string]any{"name": strings.Repeat("a", 500), "email": "alice@example.com", "rsvpStatus": "attending"},
+			wantMsg: "name must be",
+		},
+		{
+			name:    "email too long",
+			body:    map[string]any{"name": "Alice", "email": strings.Repeat("a", 500) + "@example.com", "rsvpStatus": "attending"},
+			wantMsg: "email must be",
+		},
+		{
+			name:    "phone too long",
+			body:    map[string]any{"name": "Alice", "email": "alice@example.com", "phone": "+" + strings.Repeat("1", 500), "rsvpStatus": "attending"},
+			wantMsg: "phone must be",
+		},
+		{
+			name:    "dietaryNotes too long",
+			body:    map[string]any{"name": "Alice", "email": "alice@example.com", "rsvpStatus": "attending", "dietaryNotes": strings.Repeat("a", 5000)},
+			wantMsg: "dietaryNotes must be",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, eventSvc, org := setupRSVPHandler(t)
+			shareToken, _ := publishEvent(t, eventSvc, org.ID)
+
+			rr := testutil.DoRequest(t, h, "POST", "/public/"+shareToken, tc.body)
+
+			assert.Equal(t, http.StatusBadRequest, rr.Code)
+			body := testutil.ParseJSON(t, rr)
+			assert.Equal(t, "bad_request", body["error"])
+			assert.Contains(t, body["message"], tc.wantMsg)
+		})
+	}
+}
+
+// TestHandleSubmitRSVP_AcceptsFormattedPhone covers guests typing their number
+// with the separators every phone UI shows. The stored value is normalized to
+// bare E.164.
+func TestHandleSubmitRSVP_AcceptsFormattedPhone(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"spaces", "+32 479 12 34 56", "+32479123456"},
+		{"dashes", "+32-479-12-34-56", "+32479123456"},
+		{"parens and spaces", "+1 (415) 555-2671", "+14155552671"},
+		{"dots", "+33.6.12.34.56.78", "+33612345678"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, eventSvc, org := setupRSVPHandler(t)
+			shareToken, _ := publishEvent(t, eventSvc, org.ID)
+
+			rr := testutil.DoRequest(t, h, "POST", "/public/"+shareToken, map[string]any{
+				"name":       "Alice",
+				"email":      "alice@example.com",
+				"phone":      tc.in,
+				"rsvpStatus": "attending",
+			})
+
+			require.Equal(t, http.StatusCreated, rr.Code)
+			body := testutil.ParseJSON(t, rr)
+			data, ok := body["data"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, data["phone"])
+		})
+	}
+}
+
+// TestHandleSubmitRSVP_PhoneErrorMentionsCountryCode keeps the message
+// actionable: a bare national number is the most common failure and the fix is
+// always "add your country code".
+func TestHandleSubmitRSVP_PhoneErrorMentionsCountryCode(t *testing.T) {
+	h, _, eventSvc, org := setupRSVPHandler(t)
+	shareToken, _ := publishEvent(t, eventSvc, org.ID)
+
+	rr := testutil.DoRequest(t, h, "POST", "/public/"+shareToken, map[string]any{
+		"name": "Alice", "email": "alice@example.com", "phone": "0479123456", "rsvpStatus": "attending",
+	})
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	body := testutil.ParseJSON(t, rr)
+	assert.Contains(t, body["message"], "country code")
+}
+
+// TestHandleUpdateByToken_ValidationErrorsReturn400 covers the same defect on
+// the update path, which shares isRSVPValidationError.
+func TestHandleUpdateByToken_ValidationErrorsReturn400(t *testing.T) {
+	h, svc, eventSvc, org := setupRSVPHandler(t)
+	shareToken, _ := publishEvent(t, eventSvc, org.ID)
+	a := doRSVP(t, svc, shareToken, "Alice", "alice@example.com")
+
+	rr := testutil.DoRequest(t, h, "PATCH", "/public/token/"+a.RSVPToken, map[string]any{
+		"plusOnes": -1,
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	body := testutil.ParseJSON(t, rr)
+	assert.Equal(t, "bad_request", body["error"])
+	assert.Contains(t, body["message"], "plusOnes must not be negative")
+}
+
 func TestHandleSubmitRSVP_EventNotFound(t *testing.T) {
 	h, _, _, _ := setupRSVPHandler(t)
 	rr := testutil.DoRequest(t, h, "POST", "/public/nonexistent", map[string]any{
@@ -494,6 +625,23 @@ func TestHandleStats_Success(t *testing.T) {
 	assert.Equal(t, float64(0), data["maybe"])
 	assert.Equal(t, float64(0), data["declined"])
 	assert.Equal(t, float64(0), data["pending"])
+}
+
+// TestHandleUpdateAttendee_InvalidStatusReturns400 covers the organizer-facing
+// update path, which shares isRSVPValidationError with the guest paths.
+func TestHandleUpdateAttendee_InvalidStatusReturns400(t *testing.T) {
+	h, svc, eventSvc, org := setupRSVPHandler(t)
+	shareToken, eventID := publishEvent(t, eventSvc, org.ID)
+	attendee := doRSVP(t, svc, shareToken, "Alice", "alice@example.com")
+
+	rr := testutil.DoRequest(t, h, "PATCH", "/event/"+eventID+"/"+attendee.ID, map[string]any{
+		"rsvpStatus": "not-a-status",
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	body := testutil.ParseJSON(t, rr)
+	assert.Equal(t, "bad_request", body["error"])
+	assert.Contains(t, body["message"], "invalid rsvpStatus")
 }
 
 // --- Remove Attendee ---

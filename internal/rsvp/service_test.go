@@ -783,12 +783,22 @@ func TestRemoveAttendeeWrongEvent(t *testing.T) {
 
 // --- RSVP Deadline Enforcement Tests ---
 
+// futureDeadline returns an RSVP deadline that is always ahead of now. A
+// hardcoded date silently becomes a past deadline once that date passes, which
+// turns these tests into a time bomb.
+func futureDeadline() string {
+	return time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+}
+
 func createPublishedEventWithDeadline(t *testing.T, eventSvc *event.Service, orgID, deadline string) *event.Event {
 	t.Helper()
 	ctx := context.Background()
 	ev, err := eventSvc.Create(ctx, orgID, event.CreateEventRequest{
-		Title:        "Test Event",
-		EventDate:    "2026-06-15T14:00:00Z",
+		Title: "Test Event",
+		// Relative for the same reason as futureDeadline: the deadline must be
+		// on or before the event date, so a fixed event date eventually rejects
+		// every future deadline.
+		EventDate:    time.Now().UTC().Add(48 * time.Hour).Format(time.RFC3339),
 		RSVPDeadline: &deadline,
 	})
 	require.NoError(t, err)
@@ -822,7 +832,7 @@ func TestSubmitRSVPFutureDeadline(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create event with a future deadline.
-	ev := createPublishedEventWithDeadline(t, eventSvc, org.ID, "2026-06-14T23:59:00Z")
+	ev := createPublishedEventWithDeadline(t, eventSvc, org.ID, futureDeadline())
 
 	attendee, err := svc.SubmitRSVP(ctx, ev.ShareToken, RSVPRequest{
 		Name: "Alice", Email: strPtr("alice@example.com"), RSVPStatus: "attending",
@@ -839,7 +849,7 @@ func TestUpdateByTokenPastDeadline(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create event with a future deadline first so we can submit an RSVP.
-	ev := createPublishedEventWithDeadline(t, eventSvc, org.ID, "2026-06-14T23:59:00Z")
+	ev := createPublishedEventWithDeadline(t, eventSvc, org.ID, futureDeadline())
 
 	attendee, err := svc.SubmitRSVP(ctx, ev.ShareToken, RSVPRequest{
 		Name: "Alice", Email: strPtr("alice@example.com"), RSVPStatus: "attending",
@@ -1175,10 +1185,10 @@ func createPublishedEventWithCapacityAndWaitlist(t *testing.T, eventSvc *event.S
 	ctx := context.Background()
 	wl := true
 	ev, err := eventSvc.Create(ctx, orgID, event.CreateEventRequest{
-		Title:            "Test Event",
-		EventDate:        "2026-06-15T14:00:00Z",
-		MaxCapacity:      &capacity,
-		WaitlistEnabled:  &wl,
+		Title:           "Test Event",
+		EventDate:       "2026-06-15T14:00:00Z",
+		MaxCapacity:     &capacity,
+		WaitlistEnabled: &wl,
 	})
 	require.NoError(t, err)
 	published, err := eventSvc.Publish(ctx, ev.ID, orgID)

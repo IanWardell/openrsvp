@@ -58,6 +58,25 @@ func ValidatePhone(phone string) bool {
 	return phoneRegexp.MatchString(phone)
 }
 
+// NormalizePhone strips the separators people routinely type or paste inside a
+// phone number, so a guest can enter "+32 479 12 34 56" and still pass
+// ValidatePhone while the stored value stays bare E.164. It deliberately does
+// not infer a country code: a national number stays invalid.
+func NormalizePhone(phone string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '-', '.', '(', ')', '/',
+			' ',                     // no-break space
+			' ',                     // narrow no-break space
+			' ',                     // thin space
+			'‐', '‑', '‒', '–', '—', // hyphens and dashes
+			'−': // minus sign
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(phone))
+}
+
 // SanitizeMiddleware returns middleware that intercepts JSON request bodies
 // and sanitizes all string values using the strict policy before passing the
 // request to the next handler.

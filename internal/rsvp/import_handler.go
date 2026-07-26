@@ -118,21 +118,9 @@ func (h *Handler) handleImportExecute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-// isImportValidationError returns true if the error is a known validation
-// message from the CSV import service that can be safely returned to the client.
+// isImportValidationError returns true if the error is a client input problem
+// whose message is safe to return verbatim. See errcode.ErrValidation for why
+// this is a sentinel check rather than an allowlist of message prefixes.
 func isImportValidationError(err error) bool {
-	msg := err.Error()
-	safeMessages := []string{
-		"CSV file is empty or has no header row",
-		"CSV must contain a 'Name' column",
-		"CSV exceeds maximum of",
-		"parse CSV:",
-		"event must be published to import guests",
-	}
-	for _, safe := range safeMessages {
-		if len(msg) >= len(safe) && msg[:len(safe)] == safe {
-			return true
-		}
-	}
-	return false
+	return errcode.IsValidation(err)
 }

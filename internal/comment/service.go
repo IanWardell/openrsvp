@@ -8,14 +8,15 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/yannkr/openrsvp/internal/errcode"
 	"github.com/yannkr/openrsvp/internal/security"
 )
 
 // Field limits.
 const (
-	maxBodyLen           = 2000
-	maxCommentsPerEvent  = 500
-	maxCommentsPerHour   = 5
+	maxBodyLen          = 2000
+	maxCommentsPerEvent = 500
+	maxCommentsPerHour  = 5
 )
 
 // Event holds the minimal event fields needed by the comment service.
@@ -77,7 +78,7 @@ func (s *Service) CreateComment(ctx context.Context, shareToken, rsvpToken strin
 		return nil, fmt.Errorf("event not found")
 	}
 	if !ev.CommentsEnabled {
-		return nil, fmt.Errorf("comments are disabled for this event")
+		return nil, errcode.Validationf("comments are disabled for this event")
 	}
 
 	// Look up attendee by RSVP token.
@@ -98,7 +99,7 @@ func (s *Service) CreateComment(ctx context.Context, shareToken, rsvpToken strin
 		return nil, fmt.Errorf("check comment count: %w", err)
 	}
 	if count >= maxCommentsPerEvent {
-		return nil, fmt.Errorf("this event has reached the maximum number of comments (%d)", maxCommentsPerEvent)
+		return nil, errcode.Validationf("this event has reached the maximum number of comments (%d)", maxCommentsPerEvent)
 	}
 
 	// Check rate limit: max comments per attendee per event per hour.
@@ -108,22 +109,22 @@ func (s *Service) CreateComment(ctx context.Context, shareToken, rsvpToken strin
 		return nil, fmt.Errorf("check rate limit: %w", err)
 	}
 	if recentCount >= maxCommentsPerHour {
-		return nil, fmt.Errorf("you can post up to %d comments per hour", maxCommentsPerHour)
+		return nil, errcode.Validationf("you can post up to %d comments per hour", maxCommentsPerHour)
 	}
 
 	// Validate body.
 	body := strings.TrimSpace(req.Body)
 	if body == "" {
-		return nil, fmt.Errorf("comment body is required")
+		return nil, errcode.Validationf("comment body is required")
 	}
 	if len(body) > maxBodyLen {
-		return nil, fmt.Errorf("comment must be %d characters or less", maxBodyLen)
+		return nil, errcode.Validationf("comment must be %d characters or less", maxBodyLen)
 	}
 
 	// Sanitize body (strip all HTML).
 	body = security.SanitizeStrict(body)
 	if body == "" {
-		return nil, fmt.Errorf("comment body is required")
+		return nil, errcode.Validationf("comment body is required")
 	}
 
 	comment := &Comment{

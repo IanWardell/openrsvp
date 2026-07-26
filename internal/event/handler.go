@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -711,26 +710,13 @@ func (h *Handler) handleRemoveCoHost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "co-host removed"}})
 }
 
-// isEventValidationError returns true if the error is a known, safe validation
-// message from the event service that can be returned to the client.
+// isEventValidationError returns true if the error is a client input problem
+// whose message is safe to return verbatim. See errcode.ErrValidation for why
+// this is a sentinel check rather than an allowlist of message prefixes -- the
+// old allowlist said "event_date is required" while the service says
+// "eventDate is required", so that error reached callers as an HTTP 500.
 func isEventValidationError(err error) bool {
-	msg := err.Error()
-	safeMessages := []string{
-		"title is required",
-		"event_date is required",
-		"event cannot be published",
-		"event can only be",
-		"event is not in draft",
-		"event is not in published",
-		"event is not cancelled",
-		"event is already",
-	}
-	for _, safe := range safeMessages {
-		if strings.HasPrefix(msg, safe) {
-			return true
-		}
-	}
-	return false
+	return errcode.IsValidation(err)
 }
 
 // writeJSON writes a JSON response with the given status code.

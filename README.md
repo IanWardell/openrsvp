@@ -448,6 +448,17 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 
 ## 📝 Changelog
 
+### v1.8.0 (2026-07-26)
+
+**Fixes:**
+- **Validation errors no longer return HTTP 500.** Handlers classified errors with hardcoded allowlists of message *prefixes*, so any message not on the list fell through to `500 internal_error` with an unactionable `ERR-XXXXXXXX` reference. In production this blocked real guests from RSVPing: a phone number the E.164 check rejected produced "an internal error occurred" instead of "invalid phone format" (67 occurrences across 18 distinct clients; one event saw 4 submission attempts and 0 successes). Classification now uses an `errcode.ErrValidation` sentinel matched with `errors.Is`, so new validation messages are covered automatically instead of failing open to 500
+- The same defect is fixed in the event, comment, and CSV-import handlers. Event creation was the worst affected: the allowlist read `event_date is required` while the service raises `eventDate is required`, so that error — plus over-long title/description/location, invalid `contactRequirement`, `maxCapacity` bounds, an RSVP deadline after the event date, and unparseable dates — all reached organizers as 500s
+- Phone numbers are normalized before validation, so `+32 479 12 34 56`, `+1 (415) 555-2671` and `+33.6.12.34.56.78` are accepted and stored as bare E.164. A national number with no country code is still rejected, now with an actionable message
+- The invite form's phone placeholder was `+1 (555) 123-4567`, itself invalid under the server's E.164 check — the UI demonstrated a format the API rejects. Replaced with a valid example plus a country-code hint, and the field is normalized client-side
+
+**Tests:**
+- Deadline-enforcement fixtures used a hardcoded "future" date that had since passed, failing the suite regardless of code changes; they are now relative to `time.Now()`
+
 ### v1.7.0 (2026-06-10)
 
 **Database:**

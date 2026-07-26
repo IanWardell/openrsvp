@@ -3,6 +3,7 @@ package event
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -94,6 +95,67 @@ func TestHandleCreateEvent_MissingTitle(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	body := testutil.ParseJSON(t, rr)
 	assert.Contains(t, body["message"], "title is required")
+}
+
+// TestHandleCreateEvent_ValidationErrorsReturn400 guards the same defect that
+// blocked RSVP submissions: isEventValidationError was a hardcoded allowlist of
+// message prefixes, so every message not on it fell through to HTTP 500. Note
+// "eventDate is required" vs the allowlist's "event_date is required" — the
+// casing alone was enough to turn a validation error into a server error.
+func TestHandleCreateEvent_ValidationErrorsReturn400(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    map[string]any
+		wantMsg string
+	}{
+		{
+			name:    "missing event date",
+			body:    map[string]any{"title": "Party"},
+			wantMsg: "eventDate is required",
+		},
+		{
+			name:    "title too long",
+			body:    map[string]any{"title": strings.Repeat("a", 500), "eventDate": "2027-06-15T14:00"},
+			wantMsg: "title must be",
+		},
+		{
+			name:    "description too long",
+			body:    map[string]any{"title": "Party", "eventDate": "2027-06-15T14:00", "description": strings.Repeat("a", 20000)},
+			wantMsg: "description must be",
+		},
+		{
+			name:    "location too long",
+			body:    map[string]any{"title": "Party", "eventDate": "2027-06-15T14:00", "location": strings.Repeat("a", 2000)},
+			wantMsg: "location must be",
+		},
+		{
+			name:    "invalid contactRequirement",
+			body:    map[string]any{"title": "Party", "eventDate": "2027-06-15T14:00", "contactRequirement": "carrier-pigeon"},
+			wantMsg: "invalid contactRequirement",
+		},
+		{
+			name:    "deadline after event date",
+			body:    map[string]any{"title": "Party", "eventDate": "2027-06-15T14:00", "rsvpDeadline": "2027-06-20T14:00"},
+			wantMsg: "RSVP deadline must be on or before the event date",
+		},
+		{
+			name:    "unparseable event date",
+			body:    map[string]any{"title": "Party", "eventDate": "next tuesday-ish"},
+			wantMsg: "unrecognized datetime format",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, _ := setupEventHandler(t)
+			rr := testutil.DoRequest(t, h, "POST", "/", tc.body)
+
+			assert.Equal(t, http.StatusBadRequest, rr.Code)
+			body := testutil.ParseJSON(t, rr)
+			assert.Equal(t, "bad_request", body["error"])
+			assert.Contains(t, body["message"], tc.wantMsg)
+		})
+	}
 }
 
 func TestHandleCreateEvent_Unauthorized(t *testing.T) {

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/yannkr/openrsvp/internal/errcode"
 )
 
 // base62Chars is the alphabet used for generating share tokens.
@@ -102,19 +104,19 @@ func (s *Service) IsEventOwner(ctx context.Context, eventID, organizerID string)
 // Create validates the request and creates a new event for the given organizer.
 func (s *Service) Create(ctx context.Context, organizerID string, req CreateEventRequest) (*Event, error) {
 	if req.Title == "" {
-		return nil, fmt.Errorf("title is required")
+		return nil, errcode.Validationf("title is required")
 	}
 	if len(req.Title) > maxTitleLen {
-		return nil, fmt.Errorf("title must be %d characters or less", maxTitleLen)
+		return nil, errcode.Validationf("title must be %d characters or less", maxTitleLen)
 	}
 	if len(req.Description) > maxDescriptionLen {
-		return nil, fmt.Errorf("description must be %d characters or less", maxDescriptionLen)
+		return nil, errcode.Validationf("description must be %d characters or less", maxDescriptionLen)
 	}
 	if len(req.Location) > maxLocationLen {
-		return nil, fmt.Errorf("location must be %d characters or less", maxLocationLen)
+		return nil, errcode.Validationf("location must be %d characters or less", maxLocationLen)
 	}
 	if req.EventDate == "" {
-		return nil, fmt.Errorf("eventDate is required")
+		return nil, errcode.Validationf("eventDate is required")
 	}
 
 	eventDate, err := parseFlexibleTime(req.EventDate)
@@ -143,13 +145,13 @@ func (s *Service) Create(ctx context.Context, organizerID string, req CreateEven
 	contactRequirement := "email"
 	if req.ContactRequirement != nil && *req.ContactRequirement != "" {
 		if !isValidContactRequirement(*req.ContactRequirement) {
-			return nil, fmt.Errorf("invalid contactRequirement: must be email, phone, email_or_phone, or email_and_phone")
+			return nil, errcode.Validationf("invalid contactRequirement: must be email, phone, email_or_phone, or email_and_phone")
 		}
 		contactRequirement = *req.ContactRequirement
 	}
 
 	if !s.smsEnabled && contactRequirement == "phone" {
-		return nil, fmt.Errorf("phone-only contact requirement is not available when SMS is disabled")
+		return nil, errcode.Validationf("phone-only contact requirement is not available when SMS is disabled")
 	}
 
 	shareToken, err := generateBase62Token(8)
@@ -173,7 +175,7 @@ func (s *Service) Create(ctx context.Context, organizerID string, req CreateEven
 			return nil, fmt.Errorf("invalid rsvpDeadline format: %w", err)
 		}
 		if deadline.After(eventDate) {
-			return nil, fmt.Errorf("RSVP deadline must be on or before the event date")
+			return nil, errcode.Validationf("RSVP deadline must be on or before the event date")
 		}
 		rsvpDeadline = &deadline
 	}
@@ -181,7 +183,7 @@ func (s *Service) Create(ctx context.Context, organizerID string, req CreateEven
 	var maxCapacity *int
 	if req.MaxCapacity != nil {
 		if *req.MaxCapacity < 1 {
-			return nil, fmt.Errorf("maxCapacity must be at least 1")
+			return nil, errcode.Validationf("maxCapacity must be at least 1")
 		}
 		maxCapacity = req.MaxCapacity
 	}
@@ -329,13 +331,13 @@ func (s *Service) Update(ctx context.Context, eventID, organizerID string, req U
 
 	if req.Title != nil {
 		if len(*req.Title) > maxTitleLen {
-			return nil, fmt.Errorf("title must be %d characters or less", maxTitleLen)
+			return nil, errcode.Validationf("title must be %d characters or less", maxTitleLen)
 		}
 		e.Title = *req.Title
 	}
 	if req.Description != nil {
 		if len(*req.Description) > maxDescriptionLen {
-			return nil, fmt.Errorf("description must be %d characters or less", maxDescriptionLen)
+			return nil, errcode.Validationf("description must be %d characters or less", maxDescriptionLen)
 		}
 		e.Description = *req.Description
 	}
@@ -359,7 +361,7 @@ func (s *Service) Update(ctx context.Context, eventID, organizerID string, req U
 	}
 	if req.Location != nil {
 		if len(*req.Location) > maxLocationLen {
-			return nil, fmt.Errorf("location must be %d characters or less", maxLocationLen)
+			return nil, errcode.Validationf("location must be %d characters or less", maxLocationLen)
 		}
 		e.Location = *req.Location
 	}
@@ -371,7 +373,7 @@ func (s *Service) Update(ctx context.Context, eventID, organizerID string, req U
 	}
 	if req.ContactRequirement != nil {
 		if !isValidContactRequirement(*req.ContactRequirement) {
-			return nil, fmt.Errorf("invalid contactRequirement: must be email, phone, email_or_phone, or email_and_phone")
+			return nil, errcode.Validationf("invalid contactRequirement: must be email, phone, email_or_phone, or email_and_phone")
 		}
 		e.ContactRequirement = *req.ContactRequirement
 	}
@@ -390,7 +392,7 @@ func (s *Service) Update(ctx context.Context, eventID, organizerID string, req U
 				return nil, fmt.Errorf("invalid rsvpDeadline format: %w", err)
 			}
 			if deadline.After(e.EventDate) {
-				return nil, fmt.Errorf("RSVP deadline must be on or before the event date")
+				return nil, errcode.Validationf("RSVP deadline must be on or before the event date")
 			}
 			e.RSVPDeadline = &deadline
 		}
@@ -399,7 +401,7 @@ func (s *Service) Update(ctx context.Context, eventID, organizerID string, req U
 		if *req.MaxCapacity == 0 {
 			e.MaxCapacity = nil
 		} else if *req.MaxCapacity < 0 {
-			return nil, fmt.Errorf("maxCapacity must be a positive number, or 0 to remove the limit")
+			return nil, errcode.Validationf("maxCapacity must be a positive number, or 0 to remove the limit")
 		} else {
 			e.MaxCapacity = req.MaxCapacity
 		}
@@ -413,7 +415,7 @@ func (s *Service) Update(ctx context.Context, eventID, organizerID string, req U
 	}
 
 	if !s.smsEnabled && e.ContactRequirement == "phone" {
-		return nil, fmt.Errorf("phone-only contact requirement is not available when SMS is disabled")
+		return nil, errcode.Validationf("phone-only contact requirement is not available when SMS is disabled")
 	}
 
 	if err := s.store.Update(ctx, e); err != nil {
@@ -442,7 +444,7 @@ func (s *Service) Publish(ctx context.Context, eventID, organizerID string) (*Ev
 		return nil, fmt.Errorf("forbidden: you do not own this event")
 	}
 	if e.Status != "draft" {
-		return nil, fmt.Errorf("event can only be published from draft status, current status: %s", e.Status)
+		return nil, errcode.Validationf("event can only be published from draft status, current status: %s", e.Status)
 	}
 
 	e.Status = "published"
@@ -478,7 +480,7 @@ func (s *Service) Cancel(ctx context.Context, eventID, organizerID string, notif
 		return nil, fmt.Errorf("forbidden: you do not own this event")
 	}
 	if e.Status != "published" {
-		return nil, fmt.Errorf("event can only be cancelled from published status, current status: %s", e.Status)
+		return nil, errcode.Validationf("event can only be cancelled from published status, current status: %s", e.Status)
 	}
 
 	e.Status = "cancelled"
@@ -512,7 +514,7 @@ func (s *Service) Reopen(ctx context.Context, eventID, organizerID string) (*Eve
 		return nil, fmt.Errorf("forbidden: you do not own this event")
 	}
 	if e.Status != "cancelled" {
-		return nil, fmt.Errorf("event can only be reopened from cancelled status, current status: %s", e.Status)
+		return nil, errcode.Validationf("event can only be reopened from cancelled status, current status: %s", e.Status)
 	}
 
 	e.Status = "draft"
@@ -617,7 +619,7 @@ func parseFlexibleTime(s string) (time.Time, error) {
 			return t.UTC(), nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("unrecognized datetime format: %s", s)
+	return time.Time{}, errcode.Validationf("unrecognized datetime format: %s", s)
 }
 
 // isValidContactRequirement checks whether the given value is one of the

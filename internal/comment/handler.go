@@ -222,23 +222,11 @@ func (h *Handler) handleDeleteAsOrganizer(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "comment deleted"}})
 }
 
-// isCommentValidationError returns true if the error is a known, safe
-// validation message that can be returned to the client.
+// isCommentValidationError returns true if the error is a client input problem
+// whose message is safe to return verbatim. See errcode.ErrValidation for why
+// this is a sentinel check rather than an allowlist of message prefixes.
 func isCommentValidationError(err error) bool {
-	msg := err.Error()
-	safeMessages := []string{
-		"comments are disabled for this event",
-		"comment body is required",
-		"comment must be",
-		"this event has reached the maximum",
-		"you can post up to",
-	}
-	for _, safe := range safeMessages {
-		if strings.HasPrefix(msg, safe) {
-			return true
-		}
-	}
-	return false
+	return errcode.IsValidation(err)
 }
 
 // writeJSON writes a JSON response with the given status code.
