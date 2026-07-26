@@ -6,6 +6,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
+
+	"github.com/yannkr/openrsvp/internal/errcode"
 )
 
 // SeriesHandler holds HTTP handlers for event series endpoints.
@@ -63,7 +65,12 @@ func (h *SeriesHandler) handleCreateSeries(w http.ResponseWriter, r *http.Reques
 
 	series, err := h.seriesService.CreateSeries(r.Context(), organizerID, req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		if errcode.IsValidation(err) {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		h.logger.Error().Err(err).Str("organizer_id", organizerID).Msg("failed to create series")
+		writeError(w, http.StatusInternalServerError, "internal_error", "an internal error occurred")
 		return
 	}
 
@@ -144,7 +151,12 @@ func (h *SeriesHandler) handleUpdateSeries(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusForbidden, "forbidden", err.Error())
 			return
 		}
-		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		if errcode.IsValidation(err) {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		h.logger.Error().Err(err).Str("series_id", seriesID).Msg("failed to update series")
+		writeError(w, http.StatusInternalServerError, "internal_error", "an internal error occurred")
 		return
 	}
 
@@ -170,7 +182,12 @@ func (h *SeriesHandler) handleStopSeries(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusForbidden, "forbidden", err.Error())
 			return
 		}
-		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		if errcode.IsValidation(err) {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		h.logger.Error().Err(err).Str("series_id", seriesID).Msg("failed to stop series")
+		writeError(w, http.StatusInternalServerError, "internal_error", "an internal error occurred")
 		return
 	}
 

@@ -448,6 +448,11 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 
 ## 📝 Changelog
 
+### v1.8.1 (2026-07-26)
+
+**Fixes:**
+- Event-series endpoints classified errors the opposite way round to the v1.8.0 bug: `POST /series` reported *every* failure as `400 bad_request`, and the update/stop handlers fell through to the same branch. A database outage was therefore blamed on the caller — and since the handler echoed `err.Error()` verbatim, the raw driver text (`create event series: sql: database is closed`) was returned to the client. Genuine failures now log server-side and return a generic `500 internal_error`; validation still returns 400 with its message, via the same `errcode.ErrValidation` sentinel as the rest of the API
+
 ### v1.8.0 (2026-07-26)
 
 **Fixes:**

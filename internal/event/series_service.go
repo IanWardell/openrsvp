@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/rs/zerolog"
+	"github.com/yannkr/openrsvp/internal/errcode"
 )
 
 // SeriesService contains the business logic for recurring event series.
@@ -41,16 +43,16 @@ func (s *SeriesService) SetOnCreateOccurrence(fn func(ctx context.Context, serie
 // initial occurrences.
 func (s *SeriesService) CreateSeries(ctx context.Context, organizerID string, req CreateSeriesRequest) (*EventSeries, error) {
 	if req.Title == "" {
-		return nil, fmt.Errorf("title is required")
+		return nil, errcode.Validationf("title is required")
 	}
 	if req.StartDate == "" {
-		return nil, fmt.Errorf("startDate is required")
+		return nil, errcode.Validationf("startDate is required")
 	}
 	if req.EventTime == "" {
-		return nil, fmt.Errorf("eventTime is required")
+		return nil, errcode.Validationf("eventTime is required")
 	}
 	if !isValidRecurrenceRule(req.RecurrenceRule) {
-		return nil, fmt.Errorf("invalid recurrenceRule: must be weekly, biweekly, or monthly")
+		return nil, errcode.Validationf("invalid recurrenceRule: must be weekly, biweekly, or monthly")
 	}
 
 	if req.Timezone == "" {
@@ -65,7 +67,7 @@ func (s *SeriesService) CreateSeries(ctx context.Context, organizerID string, re
 	contactRequirement := "email"
 	if req.ContactRequirement != nil && *req.ContactRequirement != "" {
 		if !isValidContactRequirement(*req.ContactRequirement) {
-			return nil, fmt.Errorf("invalid contactRequirement: must be email, phone, email_or_phone, or email_and_phone")
+			return nil, errcode.Validationf("invalid contactRequirement: must be email, phone, email_or_phone, or email_and_phone")
 		}
 		contactRequirement = *req.ContactRequirement
 	}
@@ -89,7 +91,7 @@ func (s *SeriesService) CreateSeries(ctx context.Context, organizerID string, re
 	}
 
 	if req.MaxCapacity != nil && *req.MaxCapacity < 1 {
-		return nil, fmt.Errorf("maxCapacity must be at least 1")
+		return nil, errcode.Validationf("maxCapacity must be at least 1")
 	}
 
 	series := &EventSeries{
@@ -304,7 +306,7 @@ func (s *SeriesService) UpdateSeries(ctx context.Context, seriesID, organizerID 
 	}
 	if req.ContactRequirement != nil {
 		if !isValidContactRequirement(*req.ContactRequirement) {
-			return nil, fmt.Errorf("invalid contactRequirement: must be email, phone, email_or_phone, or email_and_phone")
+			return nil, errcode.Validationf("invalid contactRequirement: must be email, phone, email_or_phone, or email_and_phone")
 		}
 		series.ContactRequirement = *req.ContactRequirement
 	}
@@ -321,7 +323,7 @@ func (s *SeriesService) UpdateSeries(ctx context.Context, seriesID, organizerID 
 		if *req.MaxCapacity == 0 {
 			series.MaxCapacity = nil
 		} else if *req.MaxCapacity < 0 {
-			return nil, fmt.Errorf("maxCapacity must be a positive number, or 0 to remove the limit")
+			return nil, errcode.Validationf("maxCapacity must be a positive number, or 0 to remove the limit")
 		} else {
 			series.MaxCapacity = req.MaxCapacity
 		}
