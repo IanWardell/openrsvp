@@ -196,6 +196,13 @@
 		--border-color: {templateConfig.borderColor};
 		--accent-color: {templateConfig.accentColor};
 		--card-font: {font || 'inherit'};
+		--color-neutral-100: #F5F5F4;
+		--color-neutral-200: #E7E5E4;
+		--color-neutral-300: #D6D3D1;
+		--color-neutral-400: #A8A29E;
+		--color-neutral-500: #78716C;
+		--color-neutral-700: #44403C;
+		--color-neutral-900: #1C1917;
 	"
 >
 	<!-- Background image with readability overlay -->
@@ -337,6 +344,7 @@
 		position: relative;
 		overflow: hidden;
 		background: var(--card-bg);
+		background-color: #ffffff;
 		border: 2px solid var(--border-color);
 		border-radius: 1.5rem;
 		padding: 2.5rem 2rem;
@@ -419,6 +427,7 @@
 		border-color: var(--primary);
 		border-width: 2px;
 		background: linear-gradient(135deg, #a855f722, #ec489922, #c084fc22);
+		background-color: #ffffff;
 		box-shadow: 0 0 30px #a855f733, 0 0 60px #ec489911;
 	}
 	.unicorn-magic .card-heading {
@@ -454,6 +463,7 @@
 		border-radius: 0.5rem;
 		box-shadow: 4px 4px 0 var(--secondary);
 		background: linear-gradient(135deg, #ef444411, #3b82f611);
+		background-color: #ffffff;
 	}
 	.superhero .card-heading {
 		font-size: 2.25rem;
@@ -473,6 +483,7 @@
 		border-width: 2px;
 		border-radius: 2rem;
 		background: linear-gradient(180deg, #22c55e0d, #a3e63511, #22c55e0d);
+		background-color: #ffffff;
 	}
 	.garden-picnic .card-heading {
 		font-size: 1.875rem;
