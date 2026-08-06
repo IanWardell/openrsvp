@@ -448,6 +448,12 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 
 ## 📝 Changelog
 
+### v1.8.2 (2026-08-06)
+
+**Fixes:**
+- Invitation cards now keep their intended light neutral text colors when the viewer uses dark mode, preventing white-on-light text in affected templates
+- Translucent Unicorn Magic, Superhero, and Garden Picnic backgrounds now render over an opaque white fallback instead of inheriting the surrounding dark page
+
 ### v1.8.1 (2026-07-26)
 
 **Fixes:**
