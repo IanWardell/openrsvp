@@ -31,10 +31,13 @@ func TestService_SaveAndGetSettings(t *testing.T) {
 	ctx := context.Background()
 
 	in := &Settings{
-		InstanceName:    "Neighborhood Events",
-		DefaultTimezone: "Europe/Paris",
-		AllowSignups:    true,
-		SupportEmail:    "help@example.org",
+		InstanceName:        "Neighborhood Events",
+		DefaultTimezone:     "Europe/Paris",
+		AllowSignups:        true,
+		SupportEmail:        "help@example.org",
+		NotifyNewOrganizer:  true,
+		NotifyNewAdmin:      true,
+		NotifyNewSuperAdmin: true,
 	}
 	require.NoError(t, svc.SaveSettings(ctx, in))
 
@@ -44,7 +47,25 @@ func TestService_SaveAndGetSettings(t *testing.T) {
 	assert.Equal(t, "Europe/Paris", got.DefaultTimezone)
 	assert.True(t, got.AllowSignups)
 	assert.Equal(t, "help@example.org", got.SupportEmail)
+	assert.True(t, got.NotifyNewOrganizer)
+	assert.True(t, got.NotifyNewAdmin)
+	assert.True(t, got.NotifyNewSuperAdmin)
 	assert.True(t, got.Configured, "SaveSettings must set configured=true")
+}
+
+func TestService_OrganizerSignupsAllowedUsesFallbackThenLiveOverride(t *testing.T) {
+	svc := setupService(t)
+	ctx := context.Background()
+
+	allowed, err := svc.OrganizerSignupsAllowed(ctx, true)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+
+	in := &Settings{InstanceName: "Live", DefaultTimezone: "UTC", AllowSignups: false}
+	require.NoError(t, svc.SaveSettings(ctx, in))
+	allowed, err = svc.OrganizerSignupsAllowed(ctx, true)
+	require.NoError(t, err)
+	assert.False(t, allowed)
 }
 
 func TestService_SaveSettings_SetsConfiguredFlag(t *testing.T) {

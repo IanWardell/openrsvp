@@ -105,9 +105,30 @@ func (a *commentRSVPStoreAdapter) FindByToken(ctx context.Context, token string)
 
 // New creates a new Server instance.
 func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
+	// Load database-backed non-secret instance settings before constructing
+	// services that consume them.
+	instanceConfigStore := instanceconfig.NewStore(db)
+	instanceConfigService := instanceconfig.NewService(instanceConfigStore)
+	if overrides, err := instanceConfigStore.GetAll(context.Background()); err == nil {
+		cfg.ApplyInstanceOverrides(overrides)
+	}
 	// Wire up auth layer.
 	authStore := auth.NewStore(db)
 	authService := auth.NewService(authStore, cfg, logger)
+	authService.SetSignupPolicyProvider(func(ctx context.Context) (bool, error) {
+		return instanceConfigService.OrganizerSignupsAllowed(ctx, cfg.AllowSignups)
+	})
+	authService.SetRoleNotificationSettingsProvider(func(ctx context.Context) (auth.RoleNotificationSettings, error) {
+		settings, err := instanceConfigService.GetSettings(ctx)
+		if err != nil {
+			return auth.RoleNotificationSettings{}, err
+		}
+		return auth.RoleNotificationSettings{
+			NewOrganizer:  settings.NotifyNewOrganizer,
+			NewAdmin:      settings.NotifyNewAdmin,
+			NewSuperAdmin: settings.NotifyNewSuperAdmin,
+		}, nil
+	})
 	authHandler := auth.NewHandler(authService, cfg, logger)
 	authMiddleware := auth.RequireAuth(authService)
 
@@ -935,14 +956,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	})
 	adminHandler := adminconsole.NewHandler(adminService, authMiddleware, adminMiddleware, superAdminMiddleware, statsHandler.HandleGetStats, logger)
 
-	// Wire up instance setup/config layer. DB-backed non-secret overrides
-	// (instance name, default timezone, signups, support email) are overlaid
-	// on top of the env-derived config at startup.
-	instanceConfigStore := instanceconfig.NewStore(db)
-	instanceConfigService := instanceconfig.NewService(instanceConfigStore)
-	if overrides, err := instanceConfigStore.GetAll(context.Background()); err == nil {
-		cfg.ApplyInstanceOverrides(overrides)
-	}
+	// Wire up instance setup/config routes.
 	instanceConfigHandler := instanceconfig.NewHandler(instanceConfigService, authMiddleware, superAdminMiddleware, logger)
 
 	s := &Server{

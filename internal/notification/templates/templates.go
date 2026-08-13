@@ -8,19 +8,20 @@ import (
 	"strings"
 )
 
-//go:embed magic_link.html rsvp_confirmation.html event_reminder.html retention_warning.html organizer_rsvp_notification.html feedback_confirmation.html rsvp_lookup.html waitlist_promotion.html cohost_invitation.html
+//go:embed magic_link.html rsvp_confirmation.html event_reminder.html retention_warning.html organizer_rsvp_notification.html feedback_confirmation.html rsvp_lookup.html waitlist_promotion.html cohost_invitation.html role_assignment_notification.html
 var templateFS embed.FS
 
 var (
-	magicLinkTmpl               *template.Template
-	rsvpConfirmationTmpl        *template.Template
-	eventReminderTmpl           *template.Template
-	retentionWarningTmpl        *template.Template
-	organizerRSVPNotifyTmpl     *template.Template
-	feedbackConfirmationTmpl    *template.Template
-	rsvpLookupTmpl              *template.Template
-	waitlistPromotionTmpl       *template.Template
-	cohostInvitationTmpl        *template.Template
+	magicLinkTmpl                  *template.Template
+	rsvpConfirmationTmpl           *template.Template
+	eventReminderTmpl              *template.Template
+	retentionWarningTmpl           *template.Template
+	organizerRSVPNotifyTmpl        *template.Template
+	feedbackConfirmationTmpl       *template.Template
+	rsvpLookupTmpl                 *template.Template
+	waitlistPromotionTmpl          *template.Template
+	cohostInvitationTmpl           *template.Template
+	roleAssignmentNotificationTmpl *template.Template
 )
 
 func init() {
@@ -33,6 +34,34 @@ func init() {
 	rsvpLookupTmpl = template.Must(template.ParseFS(templateFS, "rsvp_lookup.html"))
 	waitlistPromotionTmpl = template.Must(template.ParseFS(templateFS, "waitlist_promotion.html"))
 	cohostInvitationTmpl = template.Must(template.ParseFS(templateFS, "cohost_invitation.html"))
+	roleAssignmentNotificationTmpl = template.Must(template.ParseFS(templateFS, "role_assignment_notification.html"))
+}
+
+type roleAssignmentNotificationData struct {
+	Name     string
+	Email    string
+	Role     string
+	UsersURL string
+	Colors   EmailColors
+}
+
+// RenderRoleAssignmentNotification renders the opt-in super-admin notice for
+// a newly created account or privileged role assignment.
+func RenderRoleAssignmentNotification(name, email, role, usersURL string) (html, plain string, err error) {
+	displayRole := strings.ReplaceAll(role, "_", " ")
+	data := roleAssignmentNotificationData{
+		Name: name, Email: email, Role: displayRole, UsersURL: usersURL, Colors: DefaultEmailColors(),
+	}
+	var buf bytes.Buffer
+	if err := roleAssignmentNotificationTmpl.Execute(&buf, data); err != nil {
+		return "", "", fmt.Errorf("render role assignment notification: %w", err)
+	}
+	displayName := strings.TrimSpace(name)
+	if displayName == "" {
+		displayName = "Unnamed organizer"
+	}
+	plain = fmt.Sprintf("New OpenRSVP %s\n\n%s (%s) now has the %s role.\n\nReview platform users:\n%s\n", displayRole, displayName, email, displayRole, usersURL)
+	return buf.String(), plain, nil
 }
 
 // magicLinkData holds the template data for a magic link email.

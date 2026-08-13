@@ -228,6 +228,23 @@ body {
   background-color: var(--color-neutral-50);
 }
 
+/* Keep Chromium's native select popup aligned with the application theme.
+   Without an explicit color scheme, Chrome may render a light popup while
+   inheriting dark-mode option text, making unselected choices unreadable. */
+select {
+  color-scheme: light;
+  background-color: var(--color-surface);
+}
+
+select option {
+  color: var(--color-neutral-900);
+  background-color: var(--color-surface);
+}
+
+[data-theme="dark"] select {
+  color-scheme: dark;
+}
+
 /* Focus ring utility */
 .focus-ring {
   outline: none;

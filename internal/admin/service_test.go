@@ -118,3 +118,24 @@ func TestAdminCannotSuspendSuperAdminAccount(t *testing.T) {
 	err := svc.SuspendUser(ctx, actor, target.ID, "test", true, AuditEntry{ActorID: actor.ID, ActorRole: actor.Role, Metadata: "{}"})
 	assert.ErrorIs(t, err, ErrForbidden)
 }
+
+func TestChangeRoleNotifiesExistingSuperAdminsWhenEnabled(t *testing.T) {
+	svc, authStore, authService, _ := newTestService(t)
+	ctx := context.Background()
+	actor := createTestOrganizer(t, authStore, "root@example.com", auth.RoleSuperAdmin)
+	authService.ApplyEffectiveRole(actor)
+	target := createTestOrganizer(t, authStore, "future-admin@example.com", auth.RoleOrganizer)
+	authService.SetRoleNotificationSettingsProvider(func(context.Context) (auth.RoleNotificationSettings, error) {
+		return auth.RoleNotificationSettings{NewAdmin: true}, nil
+	})
+	type sentEmail struct{ to, subject string }
+	var sent []sentEmail
+	authService.SetEmailSender(func(_ context.Context, to, subject, _, _ string) error {
+		sent = append(sent, sentEmail{to, subject})
+		return nil
+	})
+
+	err := svc.ChangeRole(ctx, actor, target.ID, RoleRequest{Role: auth.RoleAdmin, Reason: "support team"}, AuditEntry{ActorID: actor.ID, ActorRole: actor.Role, Metadata: "{}"})
+	require.NoError(t, err)
+	assert.Contains(t, sent, sentEmail{"root@example.com", "OpenRSVP: new admin"})
+}

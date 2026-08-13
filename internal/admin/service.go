@@ -174,6 +174,7 @@ func (s *Service) CreateUser(ctx context.Context, actor *auth.Organizer, in Crea
 	audit.TargetID = o.ID
 	_ = s.store.AddAudit(ctx, audit)
 	s.authService.ApplyEffectiveRole(o)
+	s.authService.NotifyRoleAssigned(ctx, o, o.Role)
 	return o, nil
 }
 func (s *Service) SendMagicLink(ctx context.Context, actor *auth.Organizer, id string, audit AuditEntry) error {
@@ -243,7 +244,14 @@ func (s *Service) ChangeRole(ctx context.Context, actor *auth.Organizer, id stri
 	audit.TargetID = id
 	audit.Reason = in.Reason
 	audit.Metadata = fmt.Sprintf(`{"role":%q}`, in.Role)
-	return s.store.AddAudit(ctx, audit)
+	if err = s.store.AddAudit(ctx, audit); err != nil {
+		return err
+	}
+	if rank(in.Role) > rank(target.Role) {
+		target.Role = in.Role
+		s.authService.NotifyRoleAssigned(ctx, target, in.Role)
+	}
+	return nil
 }
 func rank(role string) int {
 	switch role {

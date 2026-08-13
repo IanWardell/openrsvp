@@ -60,12 +60,63 @@ func TestRequestMagicLinkExistingUser(t *testing.T) {
 	assert.Equal(t, org.ID, found.ID)
 }
 
+func TestRequestMagicLinkNotifiesSuperAdminsForNewOrganizer(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	store := NewStore(db)
+	cfg := testutil.TestConfig()
+	root, err := store.CreateOrganizer(context.Background(), "root@example.com")
+	require.NoError(t, err)
+	require.NoError(t, store.SetRole(context.Background(), root.ID, RoleSuperAdmin))
+	svc := NewService(store, cfg, zerolog.Nop())
+	svc.SetRoleNotificationSettingsProvider(func(context.Context) (RoleNotificationSettings, error) {
+		return RoleNotificationSettings{NewOrganizer: true}, nil
+	})
+	type sentEmail struct{ to, subject string }
+	var sent []sentEmail
+	svc.SetEmailSender(func(_ context.Context, to, subject, _, _ string) error {
+		sent = append(sent, sentEmail{to, subject})
+		return nil
+	})
+
+	require.NoError(t, svc.RequestMagicLink(context.Background(), "new@example.com"))
+	assert.Contains(t, sent, sentEmail{"root@example.com", "OpenRSVP: new organizer"})
+	assert.Contains(t, sent, sentEmail{"new@example.com", "Sign in to OpenRSVP"})
+}
+
+func TestRequestMagicLinkDoesNotNotifyWhenPreferenceDisabled(t *testing.T) {
+	svc, store := setupAuth(t)
+	root, err := store.CreateOrganizer(context.Background(), "root@example.com")
+	require.NoError(t, err)
+	require.NoError(t, store.SetRole(context.Background(), root.ID, RoleSuperAdmin))
+	svc.SetRoleNotificationSettingsProvider(func(context.Context) (RoleNotificationSettings, error) {
+		return RoleNotificationSettings{}, nil
+	})
+	var subjects []string
+	svc.SetEmailSender(func(_ context.Context, _, subject, _, _ string) error {
+		subjects = append(subjects, subject)
+		return nil
+	})
+
+	require.NoError(t, svc.RequestMagicLink(context.Background(), "quiet@example.com"))
+	assert.Equal(t, []string{"Sign in to OpenRSVP"}, subjects)
+}
+
 func TestRequestMagicLinkInvalidEmail(t *testing.T) {
 	svc, _ := setupAuth(t)
 	ctx := context.Background()
 
 	err := svc.RequestMagicLink(ctx, "not-an-email")
 	assert.ErrorIs(t, err, ErrInvalidEmail)
+}
+
+func TestRequestMagicLinkUsesLiveSignupPolicy(t *testing.T) {
+	svc, store := setupAuth(t)
+	svc.SetSignupPolicyProvider(func(context.Context) (bool, error) { return false, nil })
+
+	require.NoError(t, svc.RequestMagicLink(context.Background(), "blocked@example.com"))
+	organizer, err := store.FindOrganizerByEmail(context.Background(), "blocked@example.com")
+	require.NoError(t, err)
+	assert.Nil(t, organizer)
 }
 
 func TestVerifyMagicLink(t *testing.T) {

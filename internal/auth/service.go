@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -27,12 +28,29 @@ var (
 // dependency on the notification package from the auth package.
 type EmailSender func(ctx context.Context, to, subject, htmlBody, plainBody string) error
 
+// RoleNotificationSettings controls which role assignments are announced to
+// super administrators. All preferences are opt-in.
+type RoleNotificationSettings struct {
+	NewOrganizer  bool
+	NewAdmin      bool
+	NewSuperAdmin bool
+}
+
+// RoleNotificationSettingsProvider reads the current database-backed
+// preferences so changes take effect without restarting the server.
+type RoleNotificationSettingsProvider func(context.Context) (RoleNotificationSettings, error)
+
+// SignupPolicyProvider reads the current organizer signup policy.
+type SignupPolicyProvider func(context.Context) (bool, error)
+
 // Service implements the authentication business logic.
 type Service struct {
-	store     *Store
-	cfg       *config.Config
-	logger    zerolog.Logger
-	sendEmail EmailSender
+	store                    *Store
+	cfg                      *config.Config
+	logger                   zerolog.Logger
+	sendEmail                EmailSender
+	roleNotificationSettings RoleNotificationSettingsProvider
+	signupPolicy             SignupPolicyProvider
 }
 
 // NewService creates a new auth Service.
@@ -50,6 +68,14 @@ func (s *Service) SetEmailSender(fn EmailSender) {
 	s.sendEmail = fn
 }
 
+// SetRoleNotificationSettingsProvider supplies live notification preferences.
+func (s *Service) SetRoleNotificationSettingsProvider(fn RoleNotificationSettingsProvider) {
+	s.roleNotificationSettings = fn
+}
+
+// SetSignupPolicyProvider supplies a live database-backed signup policy.
+func (s *Service) SetSignupPolicyProvider(fn SignupPolicyProvider) { s.signupPolicy = fn }
+
 // RequestMagicLink validates the email, finds or creates the organizer,
 // generates a magic link token, and stores its hash in the database.
 // In development mode the raw token is logged to the console.
@@ -65,19 +91,33 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 		return fmt.Errorf("find organizer: %w", err)
 	}
 
+	created := false
 	if organizer == nil {
-		if !s.cfg.AllowSignups && !s.cfg.IsAdminEmail(email) && !s.cfg.IsSuperAdminEmail(email) {
+		allowSignups := s.cfg.AllowSignups
+		if s.signupPolicy != nil {
+			if live, policyErr := s.signupPolicy(ctx); policyErr != nil {
+				s.logger.Error().Err(policyErr).Msg("failed to read organizer signup policy")
+			} else {
+				allowSignups = live
+			}
+		}
+		if !allowSignups && !s.cfg.IsAdminEmail(email) && !s.cfg.IsSuperAdminEmail(email) {
 			return nil
 		}
 		organizer, err = s.store.CreateOrganizer(ctx, email)
 		if err != nil {
 			return fmt.Errorf("create organizer: %w", err)
 		}
+		created = true
 	}
 	if organizer.SuspendedAt != nil {
 		// Keep the public endpoint non-enumerating while ensuring suspended
 		// accounts cannot accumulate fresh authentication credentials.
 		return nil
+	}
+	if created {
+		s.applyEffectiveRole(organizer)
+		s.NotifyRoleAssigned(ctx, organizer, organizer.Role)
 	}
 
 	// Generate 32-byte random token.
@@ -280,6 +320,57 @@ func (s *Service) SendMagicLinkToExisting(ctx context.Context, organizer *Organi
 		return err
 	}
 	return s.RequestMagicLink(ctx, organizer.Email)
+}
+
+// NotifyRoleAssigned sends a best-effort announcement for a newly created
+// organizer account or a new privileged role, according to live instance
+// preferences. Notification delivery never blocks account administration.
+func (s *Service) NotifyRoleAssigned(ctx context.Context, organizer *Organizer, role string) {
+	if organizer == nil || s.sendEmail == nil || s.roleNotificationSettings == nil {
+		return
+	}
+	settings, err := s.roleNotificationSettings(ctx)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to read role notification settings")
+		return
+	}
+	enabled := map[string]bool{
+		RoleOrganizer:  settings.NewOrganizer,
+		RoleAdmin:      settings.NewAdmin,
+		RoleSuperAdmin: settings.NewSuperAdmin,
+	}[role]
+	if !enabled {
+		return
+	}
+
+	stored, err := s.store.ListActiveOrganizerEmailsByRole(ctx, RoleSuperAdmin)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to list super admins for role notification")
+		return
+	}
+	recipients := make(map[string]struct{}, len(stored)+len(s.cfg.SuperAdminEmails))
+	for _, email := range append(stored, s.cfg.SuperAdminEmails...) {
+		normalized := strings.ToLower(strings.TrimSpace(email))
+		if normalized != "" && normalized != strings.ToLower(organizer.Email) {
+			recipients[normalized] = struct{}{}
+		}
+	}
+	if len(recipients) == 0 {
+		return
+	}
+
+	htmlBody, plainBody, err := templates.RenderRoleAssignmentNotification(
+		organizer.Name, organizer.Email, role, strings.TrimRight(s.cfg.BaseURL, "/")+"/admin/users")
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to render role notification")
+		return
+	}
+	subject := fmt.Sprintf("OpenRSVP: new %s", strings.ReplaceAll(role, "_", " "))
+	for recipient := range recipients {
+		if err := s.sendEmail(ctx, recipient, subject, htmlBody, plainBody); err != nil {
+			s.logger.Error().Err(err).Str("recipient", recipient).Str("role", role).Msg("failed to send role notification")
+		}
+	}
 }
 
 // Logout invalidates the session associated with the given raw token.

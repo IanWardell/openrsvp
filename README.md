@@ -153,6 +153,7 @@ application code:
 | Capability | Configuration | Behavior |
 |------------|---------------|----------|
 | Public organizer registration | Set `ALLOW_SIGNUPS` to `true` or `false` | When disabled, unknown emails cannot create accounts. Existing organizers and addresses listed in `ADMIN_EMAILS` or `SUPER_ADMIN_EMAILS` can still sign in. |
+| Super-admin account notifications | Enable individual role notices under **Admin → Settings** | Optionally emails active super admins when a new organizer account is created or an account is promoted to admin or super admin. Each role notice is independently opt-in. |
 | SMS notifications | Set `NOTIFICATION_SMS_PROVIDER` to `twilio`, `vonage`, or `sns`; leave empty to disable | Phone-based RSVP and SMS delivery options are exposed only when an SMS provider is configured. |
 | Email open tracking | Set `EMAIL_OPEN_TRACKING_ENABLED` to `true` or `false` | Controls whether supported outbound HTML email contains an open-tracking pixel. |
 | Guest feedback delivery | Configure `FEEDBACK_GITHUB_TOKEN` plus `FEEDBACK_GITHUB_REPO`, or configure `FEEDBACK_EMAIL` | GitHub Issues is preferred; email is the fallback. With neither configured, the widget accepts submissions but no external notification is delivered. |
@@ -163,10 +164,12 @@ application code:
 `INSTANCE_NAME`, `DEFAULT_TIMEZONE`, `ALLOW_SIGNUPS`, and `SUPPORT_EMAIL` are
 non-secret instance settings. Their environment values provide startup
 defaults, and a super admin can store overrides from **Admin → Settings**.
-Database-backed overrides are applied when OpenRSVP starts, so restart the
-application after changing them in the settings screen. Provider credentials,
-database credentials, role-floor email lists, trusted proxies, and other
-secrets remain environment-only.
+Organizer signup policy and notification preferences take effect immediately
+without restarting OpenRSVP; identity and display defaults are applied on the
+next application start. The same page contains independent, off-by-default
+notifications for new organizers, admins, and super admins. Provider
+credentials, database credentials, role-floor email lists, trusted proxies,
+and other secrets remain environment-only.
 
 Waitlists, capacity, RSVP deadlines, public attendance counts, public guest
 names, comments, reminders, and webhooks are configured per event by its owner
@@ -352,6 +355,7 @@ invitation do not receive platform accounts or one of these roles.
 | Search masked guest participation and perform reason-gated PII reveals | — | — | ✅ |
 | Review the privileged-action audit log | — | — | ✅ |
 | Manage non-secret instance settings | — | — | ✅ |
+| Configure role-specific super-admin account notifications | — | — | ✅ |
 | Permanently delete eligible platform users or events after typed confirmation | — | — | ✅ |
 
 Safety rules apply even to privileged accounts: users cannot suspend, demote,

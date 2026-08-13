@@ -72,3 +72,15 @@ func TestRenderEventReminderNoMessage(t *testing.T) {
 	assert.NotContains(t, html, "Message from the organizer")
 	assert.NotContains(t, plain, "Message from the organizer")
 }
+
+func TestRenderRoleAssignmentNotification(t *testing.T) {
+	html, plain, err := RenderRoleAssignmentNotification(
+		`<script>alert("x")</script>`, "new@example.com", "super_admin", "https://example.com/admin/users")
+	require.NoError(t, err)
+
+	assert.Contains(t, html, "super admin")
+	assert.Contains(t, html, "new@example.com")
+	assert.NotContains(t, html, "<script>")
+	assert.Contains(t, plain, "super admin")
+	assert.Contains(t, plain, "https://example.com/admin/users")
+}

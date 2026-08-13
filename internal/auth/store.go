@@ -282,6 +282,30 @@ func (s *Store) SetRole(ctx context.Context, id, role string) error {
 	return nil
 }
 
+// ListActiveOrganizerEmailsByRole returns active account email addresses for a
+// persisted role. Deployment-managed role floors are merged by the service.
+func (s *Store) ListActiveOrganizerEmailsByRole(ctx context.Context, role string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT email FROM organizers WHERE role = ? AND suspended_at IS NULL ORDER BY email", role)
+	if err != nil {
+		return nil, fmt.Errorf("list organizer emails by role: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	emails := []string{}
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, fmt.Errorf("scan organizer email: %w", err)
+		}
+		emails = append(emails, email)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list organizer emails by role: %w", err)
+	}
+	return emails, nil
+}
+
 // SetAdminStatus is retained for compatibility with older integrations and
 // maps the legacy boolean to the new persisted role.
 func (s *Store) SetAdminStatus(ctx context.Context, id string, isAdmin bool) error {

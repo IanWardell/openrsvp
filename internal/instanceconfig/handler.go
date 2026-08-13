@@ -72,10 +72,13 @@ func (h *Handler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 type saveConfigRequest struct {
-	InstanceName    string `json:"instanceName"`
-	DefaultTimezone string `json:"defaultTimezone"`
-	AllowSignups    bool   `json:"allowSignups"`
-	SupportEmail    string `json:"supportEmail"`
+	InstanceName        string `json:"instanceName"`
+	DefaultTimezone     string `json:"defaultTimezone"`
+	AllowSignups        bool   `json:"allowSignups"`
+	SupportEmail        string `json:"supportEmail"`
+	NotifyNewOrganizer  bool   `json:"notifyNewOrganizer"`
+	NotifyNewAdmin      bool   `json:"notifyNewAdmin"`
+	NotifyNewSuperAdmin bool   `json:"notifyNewSuperAdmin"`
 }
 
 func (h *Handler) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
@@ -111,10 +114,13 @@ func (h *Handler) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	settings := &Settings{
-		InstanceName:    req.InstanceName,
-		DefaultTimezone: req.DefaultTimezone,
-		AllowSignups:    req.AllowSignups,
-		SupportEmail:    req.SupportEmail,
+		InstanceName:        req.InstanceName,
+		DefaultTimezone:     req.DefaultTimezone,
+		AllowSignups:        req.AllowSignups,
+		SupportEmail:        req.SupportEmail,
+		NotifyNewOrganizer:  req.NotifyNewOrganizer,
+		NotifyNewAdmin:      req.NotifyNewAdmin,
+		NotifyNewSuperAdmin: req.NotifyNewSuperAdmin,
 	}
 	if err := h.service.SaveSettings(r.Context(), settings); err != nil {
 		h.writeInternal(w, err, "failed to save setup config")

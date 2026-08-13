@@ -25,11 +25,14 @@ func (s *Service) GetSettings(ctx context.Context) (*Settings, error) {
 		return nil, err
 	}
 	return &Settings{
-		InstanceName:    all[KeyInstanceName],
-		DefaultTimezone: all[KeyDefaultTimezone],
-		AllowSignups:    all[KeyAllowSignups] == "true",
-		SupportEmail:    all[KeySupportEmail],
-		Configured:      all[KeyConfigured] == "true",
+		InstanceName:        all[KeyInstanceName],
+		DefaultTimezone:     all[KeyDefaultTimezone],
+		AllowSignups:        all[KeyAllowSignups] == "true",
+		SupportEmail:        all[KeySupportEmail],
+		NotifyNewOrganizer:  all[KeyNotifyNewOrganizer] == "true",
+		NotifyNewAdmin:      all[KeyNotifyNewAdmin] == "true",
+		NotifyNewSuperAdmin: all[KeyNotifyNewSuperAdmin] == "true",
+		Configured:          all[KeyConfigured] == "true",
 	}, nil
 }
 
@@ -42,6 +45,9 @@ func (s *Service) SaveSettings(ctx context.Context, in *Settings) error {
 		{KeyDefaultTimezone, in.DefaultTimezone},
 		{KeyAllowSignups, boolToString(in.AllowSignups)},
 		{KeySupportEmail, in.SupportEmail},
+		{KeyNotifyNewOrganizer, boolToString(in.NotifyNewOrganizer)},
+		{KeyNotifyNewAdmin, boolToString(in.NotifyNewAdmin)},
+		{KeyNotifyNewSuperAdmin, boolToString(in.NotifyNewSuperAdmin)},
 		{KeyConfigured, "true"},
 	}
 	for _, p := range pairs {
@@ -50,6 +56,19 @@ func (s *Service) SaveSettings(ctx context.Context, in *Settings) error {
 		}
 	}
 	return nil
+}
+
+// OrganizerSignupsAllowed returns the live database override when present and
+// otherwise preserves the environment-derived fallback.
+func (s *Service) OrganizerSignupsAllowed(ctx context.Context, fallback bool) (bool, error) {
+	value, ok, err := s.store.Get(ctx, KeyAllowSignups)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return fallback, nil
+	}
+	return value == "true", nil
 }
 
 // GetPublicConfig returns the non-sensitive subset for the frontend.

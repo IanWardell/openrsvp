@@ -28,7 +28,7 @@
 					<a href="/admin/invitations/events" class="px-3 py-2 text-sm font-medium text-neutral-700 hover:text-primary">Event Invitations</a>
 					<a href="/admin/invitations/guests" class="px-3 py-2 text-sm font-medium text-neutral-700 hover:text-primary">Guest Invitations</a>
 					<a href="/admin/audit" class="px-3 py-2 text-sm font-medium text-neutral-700 hover:text-primary">Audit Log</a>
-					<a href="/setup" class="px-3 py-2 text-sm font-medium text-neutral-700 hover:text-primary">Settings</a>
+					<a href="/admin/settings" class="px-3 py-2 text-sm font-medium text-neutral-700 hover:text-primary">Settings</a>
 				{/if}
 			</nav>
 		</div>

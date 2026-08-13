@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { toast } from '$lib/stores/toast';
 	import { getTimezoneOptions } from '$lib/utils/timezones';
@@ -12,10 +13,10 @@
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 
 	interface SetupConfig {
-		instance_name: string;
-		default_timezone: string;
-		allow_signups: boolean;
-		support_email: string;
+		instanceName: string;
+		defaultTimezone: string;
+		allowSignups: boolean;
+		supportEmail: string;
 	}
 
 	const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -44,6 +45,10 @@
 			// Public endpoint: tells us whether this is a first-run instance.
 			const status = await api.get<ApiResponse<{ configured: boolean }>>('/setup/status');
 			configured = status.data.configured;
+			if (configured) {
+				await goto('/admin/settings');
+				return;
+			}
 		} catch {
 			// Non-fatal: fall back to first-run framing if status is unavailable.
 		}
@@ -51,10 +56,10 @@
 		try {
 			// Super-admin-only endpoint. Load current values to prefill the form.
 			const cfg = await api.get<ApiResponse<SetupConfig>>('/setup/config');
-			instanceName = cfg.data.instance_name ?? '';
-			defaultTimezone = cfg.data.default_timezone || browserTz;
-			allowSignups = cfg.data.allow_signups ?? true;
-			supportEmail = cfg.data.support_email ?? '';
+			instanceName = cfg.data.instanceName ?? '';
+			defaultTimezone = cfg.data.defaultTimezone || browserTz;
+			allowSignups = cfg.data.allowSignups ?? true;
+			supportEmail = cfg.data.supportEmail ?? '';
 		} catch (e: unknown) {
 			const apiErr = e as { status?: number };
 			if (apiErr.status === 401 || apiErr.status === 403) {
@@ -83,13 +88,14 @@
 		submitting = true;
 		try {
 			await api.post('/setup/config', {
-				instance_name: instanceName.trim(),
-				default_timezone: defaultTimezone,
-				allow_signups: allowSignups,
-				support_email: supportEmail.trim()
+				instanceName: instanceName.trim(),
+				defaultTimezone,
+				allowSignups,
+				supportEmail: supportEmail.trim()
 			});
 			configured = true;
 			toast.success('Instance configured');
+			await goto('/admin/settings');
 		} catch (e: unknown) {
 			const apiErr = e as { status?: number; message?: string };
 			if (apiErr.status === 401 || apiErr.status === 403) {
