@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { toast } from '$lib/stores/toast';
+	import { allowSignups, appConfigLoaded, loadAppConfig } from '$lib/stores/config';
 	import { isValidEmail } from '$lib/utils/validation';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
@@ -9,6 +11,12 @@
 	let loading = $state(false);
 	let sent = $state(false);
 	let emailError = $state('');
+
+	onMount(() => {
+		// The policy is live-editable by a super admin, so refresh it whenever
+		// this entry point is visited.
+		loadAppConfig(true);
+	});
 
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
@@ -45,8 +53,14 @@
 	<div class="w-full max-w-md">
 		<div class="text-center mb-8">
 			<a href="/" class="text-2xl font-bold text-primary">OpenRSVP</a>
-			<h1 class="font-display mt-4 text-2xl font-semibold text-neutral-900">Sign in to your account</h1>
-			<p class="mt-2 text-neutral-600">Enter your email to receive a magic link</p>
+			<h1 class="font-display mt-4 text-2xl font-semibold text-neutral-900">
+				{$appConfigLoaded && $allowSignups ? 'Sign in or create an account' : 'Organizer sign in'}
+			</h1>
+			<p class="mt-2 text-neutral-600">
+				{$appConfigLoaded && !$allowSignups
+					? 'Enter the email for your existing or invited organizer account'
+					: 'Enter your email to receive a magic link'}
+			</p>
 		</div>
 
 		<div class="bg-surface rounded-lg shadow-sm border border-neutral-200 p-8">
@@ -72,8 +86,8 @@
 					</div>
 					<h2 class="text-lg font-semibold text-neutral-900 mb-2">Check your email</h2>
 					<p class="text-sm text-neutral-600 mb-4">
-						We sent a magic link to <strong>{email}</strong>. Click the link in the email to sign
-						in.
+						If an account exists for <strong>{email}</strong>, a magic link has been
+						sent. Click the link in the email to sign in.
 					</p>
 					<p class="text-xs text-neutral-500 mb-6">
 						Did not receive the email? Check your spam folder or try again.
@@ -90,6 +104,12 @@
 				</div>
 			{:else}
 				<!-- Login form -->
+				{#if $appConfigLoaded && !$allowSignups}
+					<div class="mb-6 rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+						<strong class="font-semibold text-neutral-900">Public organizer registration is closed.</strong>
+						Only existing organizers and people invited by an administrator will receive a sign-in link.
+					</div>
+				{/if}
 				<form onsubmit={handleSubmit} class="space-y-6">
 					<Input
 						label="Email address"

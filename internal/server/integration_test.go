@@ -18,6 +18,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/auth"
 	"github.com/yannkr/openrsvp/internal/config"
 	"github.com/yannkr/openrsvp/internal/database"
+	"github.com/yannkr/openrsvp/internal/instanceconfig"
 	"github.com/yannkr/openrsvp/internal/testutil"
 )
 
@@ -123,6 +124,36 @@ func TestServerIntegration(t *testing.T) {
 			if rr.Code != http.StatusOK {
 				t.Fatalf("GET %s: got %d, want 200 (body=%s)", path, rr.Code, rr.Body.String())
 			}
+		}
+	})
+
+	t.Run("public config reflects live organizer signup policy", func(t *testing.T) {
+		assertPolicy := func(want bool) {
+			t.Helper()
+			rr := doJSON(h, http.MethodGet, "/api/v1/config", nil)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET /api/v1/config: got %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+			}
+			var response struct {
+				Data struct {
+					AllowSignups bool `json:"allowSignups"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode public config: %v", err)
+			}
+			if response.Data.AllowSignups != want {
+				t.Fatalf("allowSignups: got %v, want %v", response.Data.AllowSignups, want)
+			}
+		}
+
+		assertPolicy(false)
+		if err := instanceconfig.NewStore(db).Set(context.Background(), instanceconfig.KeyAllowSignups, "true"); err != nil {
+			t.Fatalf("enable organizer signups: %v", err)
+		}
+		assertPolicy(true)
+		if err := instanceconfig.NewStore(db).Set(context.Background(), instanceconfig.KeyAllowSignups, "false"); err != nil {
+			t.Fatalf("restore organizer signup policy: %v", err)
 		}
 	})
 
