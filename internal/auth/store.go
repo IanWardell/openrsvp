@@ -23,6 +23,9 @@ type Store struct {
 	db database.DB
 }
 
+const organizerColumns = `id, email, name, timezone, role, invited_at, last_login_at,
+	suspended_at, suspended_by, suspension_reason, created_at, updated_at`
+
 // NewStore creates a new auth Store.
 func NewStore(db database.DB) *Store {
 	return &Store{db: db}
@@ -36,7 +39,7 @@ func (s *Store) BeginTx(ctx context.Context) (database.Tx, error) {
 // FindOrganizerByEmail retrieves an organizer by their email address.
 func (s *Store) FindOrganizerByEmail(ctx context.Context, email string) (*Organizer, error) {
 	row := s.db.QueryRowContext(ctx,
-		"SELECT id, email, name, timezone, is_admin, created_at, updated_at FROM organizers WHERE email = ?",
+		"SELECT "+organizerColumns+" FROM organizers WHERE email = ?",
 		email,
 	)
 
@@ -55,7 +58,7 @@ func (s *Store) FindOrganizerByIDTx(ctx context.Context, tx database.Tx, id stri
 
 func findOrganizerByID(ctx context.Context, exec executor, id string) (*Organizer, error) {
 	row := exec.QueryRowContext(ctx,
-		"SELECT id, email, name, timezone, is_admin, created_at, updated_at FROM organizers WHERE id = ?",
+		"SELECT "+organizerColumns+" FROM organizers WHERE id = ?",
 		id,
 	)
 
@@ -267,16 +270,53 @@ func (s *Store) DeleteExpiredMagicLinks(ctx context.Context) error {
 	return nil
 }
 
-// SetAdminStatus updates the is_admin flag for an organizer.
-func (s *Store) SetAdminStatus(ctx context.Context, id string, isAdmin bool) error {
+// SetRole updates the persisted role for an organizer.
+func (s *Store) SetRole(ctx context.Context, id, role string) error {
 	_, err := s.db.ExecContext(ctx,
-		"UPDATE organizers SET is_admin = ? WHERE id = ?",
-		isAdmin, id,
+		"UPDATE organizers SET role = ?, updated_at = ? WHERE id = ?",
+		role, time.Now().UTC().Format(time.RFC3339), id,
 	)
 	if err != nil {
-		return fmt.Errorf("set admin status: %w", err)
+		return fmt.Errorf("set role: %w", err)
 	}
 	return nil
+}
+
+// SetAdminStatus is retained for compatibility with older integrations and
+// maps the legacy boolean to the new persisted role.
+func (s *Store) SetAdminStatus(ctx context.Context, id string, isAdmin bool) error {
+	role := RoleOrganizer
+	if isAdmin {
+		role = RoleAdmin
+	}
+	return s.SetRole(ctx, id, role)
+}
+
+// InvalidateUnusedMagicLinks consumes all outstanding links for an organizer.
+func (s *Store) InvalidateUnusedMagicLinks(ctx context.Context, organizerID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx,
+		"UPDATE magic_links SET used_at = ? WHERE organizer_id = ? AND used_at IS NULL", now, organizerID)
+	return err
+}
+
+// DeleteSessionsByOrganizer revokes every session for an organizer.
+func (s *Store) DeleteSessionsByOrganizer(ctx context.Context, organizerID string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE organizer_id = ?", organizerID)
+	return err
+}
+
+// SetLastLogin records a successful passwordless login.
+func (s *Store) SetLastLogin(ctx context.Context, organizerID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx, "UPDATE organizers SET last_login_at = ?, updated_at = ? WHERE id = ?", now, now, organizerID)
+	return err
+}
+
+func (s *Store) MarkInvited(ctx context.Context, organizerID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx, "UPDATE organizers SET invited_at = ?, updated_at = ? WHERE id = ?", now, now, organizerID)
+	return err
 }
 
 // ExportOrganizerData gathers every record owned by the organizer into a
@@ -502,8 +542,12 @@ func normalizeValue(v any) any {
 func scanOrganizer(row *sql.Row) (*Organizer, error) {
 	var o Organizer
 	var createdAt, updatedAt string
+	var invitedAt, lastLoginAt, suspendedAt sql.NullString
+	var suspendedBy sql.NullString
 
-	err := row.Scan(&o.ID, &o.Email, &o.Name, &o.Timezone, &o.IsAdmin, &createdAt, &updatedAt)
+	err := row.Scan(&o.ID, &o.Email, &o.Name, &o.Timezone, &o.StoredRole,
+		&invitedAt, &lastLoginAt, &suspendedAt, &suspendedBy, &o.SuspensionReason,
+		&createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -519,6 +563,23 @@ func scanOrganizer(row *sql.Row) (*Organizer, error) {
 	o.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("parse updated_at: %w", err)
+	}
+	o.Role = o.StoredRole
+	o.SuspendedBy = suspendedBy.String
+	optional := []struct {
+		raw  sql.NullString
+		dest **time.Time
+	}{
+		{invitedAt, &o.InvitedAt}, {lastLoginAt, &o.LastLoginAt}, {suspendedAt, &o.SuspendedAt},
+	}
+	for _, field := range optional {
+		if field.raw.Valid {
+			parsed, parseErr := time.Parse(time.RFC3339, field.raw.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("parse organizer timestamp: %w", parseErr)
+			}
+			*field.dest = &parsed
+		}
 	}
 
 	return &o, nil

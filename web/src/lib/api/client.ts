@@ -14,6 +14,17 @@ function getCookie(name: string): string {
 /** Methods that mutate state and require CSRF protection. */
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+async function responseError(response: Response): Promise<ApiError> {
+	const parsed = (await response.json().catch(() => null)) as Partial<ApiError> | null;
+	return {
+		error: parsed?.error || 'unknown',
+		message: parsed?.message || response.statusText || 'Request failed',
+		// The response body is not required to repeat transport metadata. Always
+		// preserve the actual HTTP status for authorization-aware UI handling.
+		status: response.status
+	};
+}
+
 class ApiClient {
 	async request<T>(path: string, options: RequestInit = {}): Promise<T> {
 		const url = `${BASE_URL}${path}`;
@@ -48,12 +59,7 @@ class ApiClient {
 				};
 				throw error;
 			}
-			const error: ApiError = await response.json().catch(() => ({
-				error: 'unknown',
-				message: response.statusText,
-				status: response.status
-			}));
-			throw error;
+			throw await responseError(response);
 		}
 
 		if (response.status === 204) {
@@ -88,8 +94,8 @@ class ApiClient {
 		});
 	}
 
-	delete<T>(path: string) {
-		return this.request<T>(path, { method: 'DELETE' });
+	delete<T>(path: string, body?: unknown) {
+		return this.request<T>(path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined });
 	}
 
 	async uploadCSV<T>(path: string, file: File): Promise<T> {
@@ -123,12 +129,7 @@ class ApiClient {
 				};
 				throw error;
 			}
-			const error: ApiError = await response.json().catch(() => ({
-				error: 'unknown',
-				message: response.statusText,
-				status: response.status
-			}));
-			throw error;
+			throw await responseError(response);
 		}
 
 		return response.json();
@@ -167,12 +168,7 @@ class ApiClient {
 				};
 				throw error;
 			}
-			const error: ApiError = await response.json().catch(() => ({
-				error: 'unknown',
-				message: response.statusText,
-				status: response.status
-			}));
-			throw error;
+			throw await responseError(response);
 		}
 
 		return response.json();
@@ -187,12 +183,7 @@ class ApiClient {
 		const response = await fetch(url, { method: 'GET', credentials: 'include' });
 
 		if (!response.ok) {
-			const error: ApiError = await response.json().catch(() => ({
-				error: 'unknown',
-				message: response.statusText,
-				status: response.status
-			}));
-			throw error;
+			throw await responseError(response);
 		}
 
 		const disposition = response.headers.get('Content-Disposition') || '';

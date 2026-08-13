@@ -104,6 +104,12 @@ func (s *Server) routes() *chi.Mux {
 			// Strip prefix to get filename, then take only the base name
 			// to prevent path traversal attacks (e.g. ../../etc/passwd).
 			name := filepath.Base(strings.TrimPrefix(r.URL.Path, "/api/v1"+uploadsPrefix))
+			eventID := strings.SplitN(name, "_", 2)[0]
+			var visible int
+			if eventID == "" || s.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM events e JOIN organizers o ON o.id=e.organizer_id WHERE e.id=? AND e.suspended_at IS NULL AND o.suspended_at IS NULL`, eventID).Scan(&visible) != nil || visible == 0 {
+				http.NotFound(w, r)
+				return
+			}
 
 			// Security headers to prevent MIME-sniffing polyglot file attacks.
 			// nosniff stops browsers from guessing a different Content-Type.
@@ -122,10 +128,10 @@ func (s *Server) routes() *chi.Mux {
 		api.Mount("/comments", s.commentHandler.Routes())
 		api.Mount("/webhooks", s.webhookHandler.Routes())
 		api.Mount("/notifications", s.notifHandler.Routes())
-		api.Mount("/admin", s.statsHandler.Routes())
+		api.Mount("/admin", s.adminHandler.Routes())
 		// Public, token-based email unsubscribe (no auth, CSRF-exempt).
 		api.Mount("/unsubscribe", s.suppressionHandler.Routes())
-		// Instance setup wizard: GET /setup/status is public; config read/write are admin.
+		// Instance setup wizard: GET /setup/status is public; config read/write are super-admin-only.
 		api.Mount("/setup", s.instanceConfigHandler.Routes())
 	})
 

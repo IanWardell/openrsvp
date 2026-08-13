@@ -22,7 +22,7 @@
 	const tzOptions = getTimezoneOptions(browserTz);
 
 	let loading = $state(true);
-	// True when the API rejected the config read with 401/403 — operator must log in as admin.
+	// True when the API rejected the config read with 401/403 — operator must log in as super admin.
 	let needsAdmin = $state(false);
 	let submitting = $state(false);
 
@@ -49,7 +49,7 @@
 		}
 
 		try {
-			// Admin-only endpoint. Load current values to prefill the form.
+			// Super-admin-only endpoint. Load current values to prefill the form.
 			const cfg = await api.get<ApiResponse<SetupConfig>>('/setup/config');
 			instanceName = cfg.data.instance_name ?? '';
 			defaultTimezone = cfg.data.default_timezone || browserTz;
@@ -94,7 +94,7 @@
 			const apiErr = e as { status?: number; message?: string };
 			if (apiErr.status === 401 || apiErr.status === 403) {
 				needsAdmin = true;
-				toast.error('You must be signed in as an admin to save settings');
+				toast.error('You must be signed in as a super admin to save settings');
 			} else {
 				toast.error(apiErr.message || 'Failed to save settings');
 			}
@@ -117,13 +117,13 @@
 		{:else if needsAdmin}
 			<Card>
 				<div class="text-center py-6 space-y-4">
-					<h1 class="text-xl font-bold font-display text-neutral-900">Admin sign-in required</h1>
+					<h1 class="text-xl font-bold font-display text-neutral-900">Super-admin sign-in required</h1>
 					<p class="text-sm text-neutral-500">
-						Instance configuration can only be changed by an administrator. Please sign in
-						with an admin account to continue.
+						Instance configuration can only be changed by a super administrator. Please sign in
+						with a super-admin account to continue.
 					</p>
 					<div class="pt-2">
-						<Button href="/auth/login">Sign in as admin</Button>
+						<Button href="/auth/login">Sign in as super admin</Button>
 					</div>
 				</div>
 			</Card>

@@ -33,11 +33,11 @@ func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Use(h.authMiddleware)
 	r.Use(h.adminMiddleware)
-	r.Get("/stats", h.handleGetStats)
+	r.Get("/stats", h.HandleGetStats)
 	return r
 }
 
-func (h *Handler) handleGetStats(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.service.GetInstanceStats(r.Context())
 	if err != nil {
 		ref := errcode.Ref()

@@ -20,7 +20,7 @@ A self-hosted, privacy-first alternative to Evite. Create beautiful event invita
 - 📦 **Data Export & Account Deletion** — Organizers can export all their data and permanently delete their account from an Account settings page
 - 🛡️ **Privacy by Design** — Data auto-deletes after a configurable retention period (default 30 days post-event)
 - 🤖 **Bot Protection** — Honeypot fields and IP-based rate limiting
-- 📈 **Instance Admin** — Aggregate dashboard for instance-wide statistics (events, guests, RSVP rates, notification health, feature adoption) — privacy-first, no individual tracking
+- 📈 **Role-Based Admin Console** — Admins can review and moderate platform users and events; super admins can invite organizers, send magic links, manage roles, browse invitation catalogs, perform audited guest-data reveals, and manage instance settings
 - 🏠 **Self-Hosted** — Single Docker container, you own your data
 - 🗄️ **SQLite or PostgreSQL** — SQLite by default; PostgreSQL is fully supported and CI-tested. The full test suite runs against both
 
@@ -127,14 +127,50 @@ All configuration is via environment variables. See [`.env.example`](.env.exampl
 | `DB_DSN` | `/data/openrsvp.db` | Database connection string |
 | `UPLOADS_DIR` | `/data/uploads` | Directory for uploaded files |
 | `BASE_URL` | `http://localhost:8080` | Public URL for magic links and invites |
+| `MAGIC_LINK_EXPIRY` | `15m` | Lifetime of a one-time magic sign-in link |
+| `SESSION_EXPIRY` | `168h` | Lifetime of an authenticated organizer session |
 | `NOTIFICATION_EMAIL_PROVIDER` | `smtp` | Email provider (`smtp`, `sendgrid`, `ses`) |
+| `NOTIFICATION_SMS_PROVIDER` | _(empty)_ | Optional SMS provider (`twilio`, `vonage`, `sns`); empty disables SMS |
+| `EMAIL_OPEN_TRACKING_ENABLED` | `true` | Add an open-tracking pixel to supported outbound email when `true` |
 | `DEFAULT_RETENTION_DAYS` | `30` | Days after event to auto-delete data |
 | `FEEDBACK_GITHUB_TOKEN` | _(empty)_ | GitHub PAT for posting feedback as Issues |
 | `FEEDBACK_GITHUB_REPO` | _(empty)_ | Target repo for Issues, e.g. `owner/repo` |
 | `FEEDBACK_EMAIL` | _(empty)_ | Email address to receive feedback (fallback) |
 | `TRUSTED_PROXIES` | _(empty)_ | Comma-separated CIDR ranges of trusted reverse proxies (e.g. `10.0.0.0/8,172.16.0.0/12`). When set, `X-Forwarded-For` / `X-Real-IP` headers are trusted to determine client IP. When empty (default), only `RemoteAddr` is used, which prevents IP spoofing. **Set this when running behind a reverse proxy (Nginx, Caddy, etc.)** |
 | `MAX_COHOSTS_PER_EVENT` | `10` | Maximum number of co-hosts allowed per event |
-| `ADMIN_EMAILS` | _(empty)_ | Comma-separated list of instance admin emails (e.g. `admin@example.com,ops@example.com`). Admin status is synced on every page load — add or remove emails and changes take effect immediately without requiring re-login |
+| `ADMIN_EMAILS` | _(empty)_ | Comma-separated emails with a deployment-managed minimum `admin` role. Admins can review and moderate users and events. |
+| `SUPER_ADMIN_EMAILS` | _(empty)_ | Comma-separated emails with a deployment-managed minimum `super_admin` role. Super admins manage roles, invitations, sensitive reveals, settings, and irreversible deletion. |
+| `INSTANCE_NAME` | `OpenRSVP` | Name shown throughout the instance |
+| `DEFAULT_TIMEZONE` | `UTC` | IANA timezone used as the default for newly created events |
+| `ALLOW_SIGNUPS` | `true` | Whether an unknown email can create an organizer account through magic-link sign-in |
+| `SUPPORT_EMAIL` | _(empty)_ | Optional support address shown to users |
+
+### Deployment-controlled capabilities
+
+The operator can enable, disable, or select these capabilities without changing
+application code:
+
+| Capability | Configuration | Behavior |
+|------------|---------------|----------|
+| Public organizer registration | Set `ALLOW_SIGNUPS` to `true` or `false` | When disabled, unknown emails cannot create accounts. Existing organizers and addresses listed in `ADMIN_EMAILS` or `SUPER_ADMIN_EMAILS` can still sign in. |
+| SMS notifications | Set `NOTIFICATION_SMS_PROVIDER` to `twilio`, `vonage`, or `sns`; leave empty to disable | Phone-based RSVP and SMS delivery options are exposed only when an SMS provider is configured. |
+| Email open tracking | Set `EMAIL_OPEN_TRACKING_ENABLED` to `true` or `false` | Controls whether supported outbound HTML email contains an open-tracking pixel. |
+| Guest feedback delivery | Configure `FEEDBACK_GITHUB_TOKEN` plus `FEEDBACK_GITHUB_REPO`, or configure `FEEDBACK_EMAIL` | GitHub Issues is preferred; email is the fallback. With neither configured, the widget accepts submissions but no external notification is delivered. |
+| Email delivery backend | Set `NOTIFICATION_EMAIL_PROVIDER` to `smtp`, `sendgrid`, or `ses` | Selects the provider used for mandatory magic links and other email notifications. |
+| Database backend | Set `DB_DRIVER` to `sqlite` or `postgres` | Selects the persistence engine. Both dialects have equivalent migrations and are CI-tested. |
+| Deployment-managed access | `ADMIN_EMAILS` and `SUPER_ADMIN_EMAILS` | Grants minimum roles that cannot be lowered in the UI while the address remains configured. |
+
+`INSTANCE_NAME`, `DEFAULT_TIMEZONE`, `ALLOW_SIGNUPS`, and `SUPPORT_EMAIL` are
+non-secret instance settings. Their environment values provide startup
+defaults, and a super admin can store overrides from **Admin → Settings**.
+Database-backed overrides are applied when OpenRSVP starts, so restart the
+application after changing them in the settings screen. Provider credentials,
+database credentials, role-floor email lists, trusted proxies, and other
+secrets remain environment-only.
+
+Waitlists, capacity, RSVP deadlines, public attendance counts, public guest
+names, comments, reminders, and webhooks are configured per event by its owner
+or co-host rather than enabled globally by the deployer.
 
 ### 📧 Email Providers
 
@@ -295,9 +331,73 @@ All API endpoints are under `/api/v1`. The server also provides:
 
 ### 🔑 Instance Admin
 
+#### Roles and permissions
+
+Roles are hierarchical: `super_admin` includes all `admin` permissions, and
+`admin` includes the normal organizer capabilities. Guests who RSVP to an
+invitation do not receive platform accounts or one of these roles.
+
+| Permission | Organizer | Admin | Super admin |
+|------------|:---------:|:-----:|:-----------:|
+| Create and manage owned events, invitations, guests, messages, reminders, imports, and webhooks | ✅ | ✅ | ✅ |
+| Manage events as an assigned co-host | ✅ | ✅ | ✅ |
+| Export or delete their own organizer account | ✅ | ✅ | ✅ |
+| View instance-wide aggregate statistics | — | ✅ | ✅ |
+| Search all platform users and events | — | ✅ | ✅ |
+| Suspend or restore eligible users and events with a recorded reason | — | ✅ | ✅ |
+| Invite organizers and send account magic links | — | — | ✅ |
+| Revoke another organizer's sessions | — | — | ✅ |
+| Assign database-managed organizer, admin, and super-admin roles | — | — | ✅ |
+| Browse the platform-wide event-invitation catalog | — | — | ✅ |
+| Search masked guest participation and perform reason-gated PII reveals | — | — | ✅ |
+| Review the privileged-action audit log | — | — | ✅ |
+| Manage non-secret instance settings | — | — | ✅ |
+| Permanently delete eligible platform users or events after typed confirmation | — | — | ✅ |
+
+Safety rules apply even to privileged accounts: users cannot suspend, demote,
+or delete themselves; a regular admin cannot moderate a super admin;
+environment-managed super admins are protected from destructive role actions;
+and the last database-managed super admin cannot be removed when no deployment-
+managed super admin exists.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/admin/stats` | Instance-wide aggregate statistics (admin only) |
+| GET | `/api/v1/admin/events` | Search and review all events (admin) |
+| POST | `/api/v1/admin/events/:id/suspend` | Hide and lock an event, with a required reason (admin) |
+| POST | `/api/v1/admin/events/:id/restore` | Restore a moderated event, with a required reason (admin) |
+| GET | `/api/v1/admin/users` | Search and review platform accounts (admin) |
+| POST | `/api/v1/admin/users/:id/suspend` | Lock an account, revoke access, and hide owned events (admin) |
+| POST | `/api/v1/admin/users/:id/restore` | Restore an account (admin) |
+| POST | `/api/v1/admin/users` | Invite an organizer and send their magic link (super admin) |
+| PATCH | `/api/v1/admin/users/:id/role` | Change a database-managed role (super admin) |
+| POST | `/api/v1/admin/users/:id/magic-link` | Invalidate older links and send a fresh login link (super admin) |
+| POST | `/api/v1/admin/users/:id/sessions/revoke` | Revoke all active sessions (super admin) |
+| GET | `/api/v1/admin/invitations/events` | Browse the platform event-invitation catalog (super admin) |
+| GET | `/api/v1/admin/invitations/guests` | Browse masked guest invitations (super admin) |
+| POST | `/api/v1/admin/invitations/guests/reveal-page` | Reveal guest PII on the current page, with an audited reason (super admin) |
+| POST | `/api/v1/admin/invitations/guests/:id/reveal` | Reveal matching guest participation, with an audited reason (super admin) |
+| GET | `/api/v1/admin/audit-log` | Review privileged actions (super admin) |
+| DELETE | `/api/v1/admin/events/:id` | Permanently delete an event after typed confirmation (super admin) |
+| DELETE | `/api/v1/admin/users/:id` | Permanently delete an account after typed confirmation (super admin) |
+
+`ADMIN_EMAILS` and `SUPER_ADMIN_EMAILS` are deployment-managed role floors. A
+database role can grant more access, but cannot reduce access below the role
+configured for an email. Self-modification, environment-managed super admins,
+and the last database super admin are protected from destructive role actions.
+
+Configure at least one `SUPER_ADMIN_EMAILS` address before deploying a new
+instance or upgrading to v1.9.0. Keep ordinary moderators in `ADMIN_EMAILS`:
+
+```env
+SUPER_ADMIN_EMAILS=owner@example.com
+ADMIN_EMAILS=moderator@example.com
+```
+
+If deployment automation creates or updates the environment file, add
+`SUPER_ADMIN_EMAILS` to both its initial template and its update/enforcement
+step. Role floors are refreshed during session validation, so changing these
+variables does not normally require users to sign out and back in.
 
 ### 📊 Email Tracking
 
@@ -323,8 +423,8 @@ Open tracking is gated by `EMAIL_OPEN_TRACKING_ENABLED`. The inbound delivery we
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/setup/status` | Whether the instance has been configured (public) |
-| GET | `/api/v1/setup/config` | Read non-secret instance settings (admin) |
-| POST | `/api/v1/setup/config` | Update non-secret instance settings (admin) |
+| GET | `/api/v1/setup/config` | Read non-secret instance settings (super admin) |
+| POST | `/api/v1/setup/config` | Update non-secret instance settings (super admin) |
 
 Non-secret instance settings (instance name, default timezone, allow-signups, support email) are stored in the database and overlaid on the environment config at startup. Secrets remain environment-only.
 
@@ -427,6 +527,88 @@ For PostgreSQL, use `pg_dump`:
 docker compose exec postgres pg_dump -U openrsvp openrsvp > backup.sql
 ```
 
+### ⬆️ Upgrading to v1.9.0
+
+v1.9.0 introduces the role-based admin and super-admin console. Database
+migration `000032` runs automatically when the new container starts. It:
+
+- replaces the legacy `is_admin` flag with `organizer`, `admin`, and
+  `super_admin` roles;
+- promotes existing legacy admins to stored super admins;
+- adds organizer and event moderation fields; and
+- creates the administrative audit log.
+
+Existing events, invitations, RSVPs, uploads, and sessions are retained. A
+short application restart is required while the schema migration runs.
+
+1. Choose at least one existing operator and add their normalized email address
+   to `SUPER_ADMIN_EMAILS`. Keep regular moderators in `ADMIN_EMAILS`.
+2. Back up the database and `/data/uploads` before replacing the application.
+3. Pull or build the new image and recreate the application container.
+4. Verify the migration log, health endpoint, super-admin navigation, and a
+   test magic-link delivery.
+
+For SQLite, stop the application first and archive the complete `/data` volume
+so the database, WAL files, and uploads form one consistent backup:
+
+```bash
+mkdir -p backups
+docker compose stop openrsvp
+docker compose run --rm --no-deps \
+  --entrypoint sh \
+  -v "$PWD/backups:/backup" \
+  openrsvp \
+  -c 'tar czf /backup/openrsvp-pre-v1.9.0-$(date +%Y%m%d-%H%M%S).tar.gz -C /data .'
+```
+
+For PostgreSQL, take a logical backup and then stop the application:
+
+```bash
+mkdir -p backups
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml \
+  exec -T postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" \
+  > backups/openrsvp-pre-v1.9.0.sql
+docker compose -f docker-compose.yml -f docker-compose.postgres.yml stop openrsvp
+```
+
+Update `.env` before starting the new version:
+
+```env
+SUPER_ADMIN_EMAILS=owner@example.com
+ADMIN_EMAILS=moderator@example.com
+```
+
+For an image-based deployment:
+
+```bash
+docker compose pull openrsvp
+docker compose up -d openrsvp
+```
+
+For a source build:
+
+```bash
+git pull
+docker compose build --pull openrsvp
+docker compose up -d openrsvp
+```
+
+PostgreSQL deployments should include both Compose files in the pull/build and
+startup commands. After startup, verify the deployment:
+
+```bash
+docker compose logs --tail=100 openrsvp
+curl -fsS https://rsvp.example.com/health
+```
+
+The logs should contain `migrations applied`. Sign in using an address from
+`SUPER_ADMIN_EMAILS` and confirm that the admin navigation includes Event
+Invitations, Guest Invitations, Audit Log, and Settings.
+
+**Rollback:** do not run an older application image against the migrated
+database. Stop the new version, restore the pre-upgrade database/data backup,
+restore the previous image tag, and then start the previous version.
+
 ### ⚠️ Known limitations
 
 **Inbound delivery webhooks are unauthenticated.** The SendGrid/SES delivery webhooks record bounces and complaints but do not yet verify provider signatures. Restrict access at the reverse proxy if you expose them. Signature verification is a tracked follow-up.
@@ -447,6 +629,26 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 | Deployment | Docker (multi-stage, single binary) |
 
 ## 📝 Changelog
+
+### v1.9.0 (2026-08-12)
+
+**Admin and authorization:**
+- Add explicit `organizer`, `admin`, and `super_admin` roles with deployment-managed role floors through `ADMIN_EMAILS` and `SUPER_ADMIN_EMAILS`
+- Add searchable platform user and event management, organizer invitations, admin-sent magic links, session revocation, role management, moderation, and protected destructive actions
+- Add super-admin event- and guest-invitation catalogs, masked guest contact data, reason-gated PII reveals, and a privileged-action audit log
+- Restrict instance settings, invitation catalogs, guest reveals, audit history, role changes, and permanent deletion to super admins
+
+**Reliability and user experience:**
+- Fix magic-link verification racing the initial session lookup, so successful authentication redirects directly to `/events`
+- Preserve HTTP status codes in frontend API errors so unauthorized `/setup` access renders the super-admin-required state
+- Replace native administrative prompts with accessible, validated application dialogs
+- Separate total RSVP responses from attending headcount and display both masked email and phone when available
+- Resolve recognizable actor and target identities in the audit log while retaining immutable IDs
+
+**Dates and migrations:**
+- Keep canonical timestamps in UTC and convert notification dates into each event's configured IANA timezone for display
+- Add SQLite and PostgreSQL migration `000032`, which converts legacy admin flags into roles and adds moderation and audit storage
+- Add a v1.9.0 backup, upgrade, verification, and rollback runbook to the self-hosting guide
 
 ### v1.8.2 (2026-08-06)
 
@@ -567,7 +769,7 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 
 **Backend:**
 - New `internal/stats/` package with model, store, service (5-minute in-memory cache), and handler
-- New database migration (000029): adds `is_admin` column to organizers table
+- Database migration 000029 introduced the legacy `is_admin` flag
 - `GET /api/v1/admin/stats` endpoint with auth + admin middleware
 - Admin status synced from `ADMIN_EMAILS` on session validation (not just login)
 

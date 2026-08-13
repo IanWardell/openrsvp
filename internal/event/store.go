@@ -21,7 +21,7 @@ func NewStore(db database.DB) *Store {
 }
 
 // eventColumns is the standard column list for event queries.
-const eventColumns = `id, organizer_id, title, description, event_date, end_date, location, timezone, retention_days, status, share_token, contact_requirement, show_headcount, show_guest_list, rsvp_deadline, max_capacity, waitlist_enabled, comments_enabled, series_id, series_index, series_override, created_at, updated_at`
+const eventColumns = `id, organizer_id, title, description, event_date, end_date, location, timezone, retention_days, status, share_token, contact_requirement, show_headcount, show_guest_list, rsvp_deadline, max_capacity, waitlist_enabled, comments_enabled, series_id, series_index, series_override, suspended_at, suspended_by, suspension_reason, created_at, updated_at`
 
 // Create inserts a new event into the database.
 func (s *Store) Create(ctx context.Context, e *Event) error {
@@ -71,9 +71,27 @@ func (s *Store) FindByID(ctx context.Context, id string) (*Event, error) {
 // FindByShareToken retrieves an event by its share token.
 func (s *Store) FindByShareToken(ctx context.Context, shareToken string) (*Event, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT `+eventColumns+` FROM events WHERE share_token = ?`, shareToken,
+		`SELECT `+prefixedEventColumns("e")+` FROM events e JOIN organizers o ON o.id = e.organizer_id
+		 WHERE e.share_token = ? AND e.suspended_at IS NULL AND o.suspended_at IS NULL`, shareToken,
 	)
 	return scanEvent(row)
+}
+
+// IsEffectivelySuspended includes both direct event moderation and an owner
+// account suspension.
+func (s *Store) IsEffectivelySuspended(ctx context.Context, eventID string) (bool, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events e JOIN organizers o ON o.id=e.organizer_id
+		WHERE e.id=? AND (e.suspended_at IS NOT NULL OR o.suspended_at IS NOT NULL)`, eventID).Scan(&count)
+	return count > 0, err
+}
+
+func prefixedEventColumns(alias string) string {
+	parts := strings.Split(eventColumns, ", ")
+	for i := range parts {
+		parts[i] = alias + "." + parts[i]
+	}
+	return strings.Join(parts, ", ")
 }
 
 // FindByOrganizerID retrieves all events belonging to an organizer, excluding
@@ -185,7 +203,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 func scanEvent(row *sql.Row) (*Event, error) {
 	var e Event
 	var eventDate, createdAt, updatedAt string
-	var endDate, rsvpDeadline sql.NullString
+	var endDate, rsvpDeadline, suspendedAt, suspendedBy sql.NullString
 	var maxCapacity sql.NullInt64
 	var seriesID sql.NullString
 	var seriesIndex sql.NullInt64
@@ -198,6 +216,7 @@ func scanEvent(row *sql.Row) (*Event, error) {
 		&showHeadcount, &showGuestList,
 		&rsvpDeadline, &maxCapacity, &waitlistEnabled, &commentsEnabled,
 		&seriesID, &seriesIndex, &seriesOverride,
+		&suspendedAt, &suspendedBy, &e.SuspensionReason,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -220,6 +239,7 @@ func scanEvent(row *sql.Row) (*Event, error) {
 		v := int(seriesIndex.Int64)
 		e.SeriesIndex = &v
 	}
+	setSuspensionFields(&e, suspendedAt, suspendedBy)
 
 	return parseEventTimes(&e, eventDate, endDate, rsvpDeadline, maxCapacity, createdAt, updatedAt)
 }
@@ -228,7 +248,7 @@ func scanEvent(row *sql.Row) (*Event, error) {
 func scanEventRow(rows *sql.Rows) (*Event, error) {
 	var e Event
 	var eventDate, createdAt, updatedAt string
-	var endDate, rsvpDeadline sql.NullString
+	var endDate, rsvpDeadline, suspendedAt, suspendedBy sql.NullString
 	var maxCapacity sql.NullInt64
 	var seriesID sql.NullString
 	var seriesIndex sql.NullInt64
@@ -241,6 +261,7 @@ func scanEventRow(rows *sql.Rows) (*Event, error) {
 		&showHeadcount, &showGuestList,
 		&rsvpDeadline, &maxCapacity, &waitlistEnabled, &commentsEnabled,
 		&seriesID, &seriesIndex, &seriesOverride,
+		&suspendedAt, &suspendedBy, &e.SuspensionReason,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -260,8 +281,18 @@ func scanEventRow(rows *sql.Rows) (*Event, error) {
 		v := int(seriesIndex.Int64)
 		e.SeriesIndex = &v
 	}
+	setSuspensionFields(&e, suspendedAt, suspendedBy)
 
 	return parseEventTimes(&e, eventDate, endDate, rsvpDeadline, maxCapacity, createdAt, updatedAt)
+}
+
+func setSuspensionFields(e *Event, suspendedAt, suspendedBy sql.NullString) {
+	if suspendedAt.Valid {
+		if parsed, err := time.Parse(time.RFC3339, suspendedAt.String); err == nil {
+			e.SuspendedAt = &parsed
+		}
+	}
+	e.SuspendedBy = suspendedBy.String
 }
 
 // parseEventTimes parses the RFC3339 timestamp strings into time.Time fields.

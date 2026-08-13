@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
+	adminconsole "github.com/yannkr/openrsvp/internal/admin"
 	"github.com/yannkr/openrsvp/internal/auth"
 	"github.com/yannkr/openrsvp/internal/calendar"
 	"github.com/yannkr/openrsvp/internal/comment"
@@ -30,6 +31,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/security"
 	"github.com/yannkr/openrsvp/internal/stats"
 	"github.com/yannkr/openrsvp/internal/suppression"
+	"github.com/yannkr/openrsvp/internal/timezone"
 	"github.com/yannkr/openrsvp/internal/webhook"
 )
 
@@ -53,6 +55,7 @@ type Server struct {
 	notifHandler          *notification.Handler
 	notifService          *notification.Service
 	statsHandler          *stats.Handler
+	adminHandler          *adminconsole.Handler
 	suppressionHandler    *suppression.Handler
 	instanceConfigHandler *instanceconfig.Handler
 	scheduler             *scheduler.Scheduler
@@ -152,7 +155,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	// (either as owner or co-host).
 	// Returns nil if the organizer can manage the event; a non-nil error otherwise.
 	checkEventOwner := func(ctx context.Context, eventID, organizerID string) error {
-		canManage, err := eventService.CanManageEvent(ctx, eventID, organizerID)
+		canManage, err := eventService.CanOperateEvent(ctx, eventID, organizerID)
 		if err != nil {
 			return err
 		}
@@ -309,7 +312,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 				"eventId":      eventID,
 			})
 
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
+			eventDate := timezone.FormatEventDate(ev.EventDate, ev.Timezone)
 			location := ev.Location
 			if location == "" {
 				location = "TBD"
@@ -389,7 +392,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 
 			if err := notifService.Send(ctx, eventID, attendee.ID, notification.ChannelEmail, &notification.Message{
 				To:      organizer.Email,
-				Subject: "New RSVP — " + attendee.Name + " — " + ev.Title + " (" + ev.EventDate.Format("Jan 2") + ")",
+				Subject: "New RSVP — " + attendee.Name + " — " + ev.Title + " (" + timezone.FormatEventDay(ev.EventDate, ev.Timezone) + ")",
 				Body:    htmlBody,
 				Plain:   plainBody,
 			}); err != nil {
@@ -411,7 +414,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 				return
 			}
 
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
+			eventDate := timezone.FormatEventDate(ev.EventDate, ev.Timezone)
 			location := ev.Location
 			if location == "" {
 				location = "TBD"
@@ -454,7 +457,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 				return
 			}
 
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
+			eventDate := timezone.FormatEventDate(ev.EventDate, ev.Timezone)
 			location := ev.Location
 			if location == "" {
 				location = "TBD"
@@ -491,7 +494,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 				return
 			}
 
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
+			eventDate := timezone.FormatEventDate(ev.EventDate, ev.Timezone)
 			location := ev.Location
 			if location == "" {
 				location = "TBD"
@@ -592,7 +595,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 			}
 
 			inviteURL := cfg.BaseURL + "/i/" + ev.ShareToken
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
+			eventDate := timezone.FormatEventDate(ev.EventDate, ev.Timezone)
 			location := ev.Location
 			if location == "" {
 				location = "TBD"
@@ -655,7 +658,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 				senderName = attendee.Name
 			}
 
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
+			eventDate := timezone.FormatEventDate(ev.EventDate, ev.Timezone)
 			location := ev.Location
 			if location == "" {
 				location = "TBD"
@@ -777,7 +780,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 				return
 			}
 
-			eventDate := e.EventDate.Format("January 2, 2006 at 3:04 PM")
+			eventDate := timezone.FormatEventDate(e.EventDate, e.Timezone)
 			location := e.Location
 			if location == "" {
 				location = "TBD"
@@ -914,7 +917,23 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	statsStore := stats.NewStore(db)
 	statsService := stats.NewService(statsStore, logger)
 	adminMiddleware := auth.RequireAdmin()
+	superAdminMiddleware := auth.RequireSuperAdmin()
 	statsHandler := stats.NewHandler(statsService, authMiddleware, adminMiddleware, logger)
+	adminStore := adminconsole.NewStore(db)
+	adminService := adminconsole.NewService(adminStore, authStore, authService, cfg)
+	adminService.SetOnDeleteEvent(func(eventID string) {
+		entries, err := os.ReadDir(uploadsDir)
+		if err != nil {
+			return
+		}
+		prefix := eventID + "_"
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
+				_ = os.Remove(filepath.Join(uploadsDir, entry.Name()))
+			}
+		}
+	})
+	adminHandler := adminconsole.NewHandler(adminService, authMiddleware, adminMiddleware, superAdminMiddleware, statsHandler.HandleGetStats, logger)
 
 	// Wire up instance setup/config layer. DB-backed non-secret overrides
 	// (instance name, default timezone, signups, support email) are overlaid
@@ -924,7 +943,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	if overrides, err := instanceConfigStore.GetAll(context.Background()); err == nil {
 		cfg.ApplyInstanceOverrides(overrides)
 	}
-	instanceConfigHandler := instanceconfig.NewHandler(instanceConfigService, authMiddleware, adminMiddleware, logger)
+	instanceConfigHandler := instanceconfig.NewHandler(instanceConfigService, authMiddleware, superAdminMiddleware, logger)
 
 	s := &Server{
 		cfg:                   cfg,
@@ -944,6 +963,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		notifHandler:          notifHandler,
 		notifService:          notifService,
 		statsHandler:          statsHandler,
+		adminHandler:          adminHandler,
 		suppressionHandler:    suppressionHandler,
 		instanceConfigHandler: instanceConfigHandler,
 		scheduler:             sched,

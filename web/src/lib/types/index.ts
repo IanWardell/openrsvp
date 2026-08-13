@@ -4,8 +4,41 @@ export interface Organizer {
 	name: string;
 	timezone: string;
 	isAdmin: boolean;
+	isSuperAdmin: boolean;
+	role: 'organizer' | 'admin' | 'super_admin';
+	storedRole: 'organizer' | 'admin' | 'super_admin';
+	minimumRole: 'organizer' | 'admin' | 'super_admin';
+	roleManagedByEnvironment: boolean;
+	invitedAt?: string;
+	lastLoginAt?: string;
+	suspendedAt?: string;
+	suspendedBy?: string;
+	suspensionReason?: string;
 	createdAt: string;
 	updatedAt: string;
+}
+
+export interface AdminPagination { page: number; pageSize: number; total: number; totalPages: number }
+export interface AdminPage<T> { data: T[]; pagination: AdminPagination }
+export interface AdminUser {
+	id: string; email: string; name: string; role: Organizer['role']; storedRole: Organizer['role'];
+	minimumRole: Organizer['role']; roleManagedByEnvironment: boolean; suspendedAt?: string;
+	suspensionReason?: string; createdAt: string; lastLoginAt?: string; ownedEvents: number; cohostedEvents: number;
+}
+export interface AdminEvent {
+	id: string; title: string; organizerId: string; organizerEmail: string; organizerName: string;
+	status: Event['status']; eventDate: string; timezone: string; suspendedAt?: string; suspensionReason?: string;
+	ownerSuspended: boolean; effectiveSuspended: boolean; templateId: string; inviteUpdatedAt?: string;
+	attending: number; maybe: number; declined: number; pending: number; waitlisted: number; responses: number; headcount: number;
+	publicUrl?: string;
+}
+export interface AdminGuest {
+	id: string; eventId: string; eventTitle: string; name: string; email?: string; phone?: string;
+	rsvpStatus: string; plusOnes: number; importSource?: string; dietaryNotes?: string; createdAt: string;
+}
+export interface AdminAuditEntry {
+	id: string; actorId: string; actorEmail?: string; actorRole: string; action: string; targetType: string; targetId: string; targetLabel?: string;
+	reason: string; metadata: string; requestId: string; remoteIp: string; createdAt: string;
 }
 
 export interface Event {
@@ -30,6 +63,9 @@ export interface Event {
 	seriesId?: string;
 	seriesIndex?: number;
 	seriesOverride?: boolean;
+	suspendedAt?: string;
+	suspendedBy?: string;
+	suspensionReason?: string;
 	createdAt: string;
 	updatedAt: string;
 }

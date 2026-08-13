@@ -52,3 +52,19 @@ func TestLoadSESEnv(t *testing.T) {
 	assert.Equal(t, "ses-pass", cfg.SESPassword)
 	assert.Equal(t, "ses@example.com", cfg.SESFrom)
 }
+
+func TestLoadAdminRoleEmails(t *testing.T) {
+	t.Setenv("ENV", "development")
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("DB_DSN", "openrsvp.db")
+	t.Setenv("ADMIN_EMAILS", " admin@example.com,TEAM@example.com ")
+	t.Setenv("SUPER_ADMIN_EMAILS", " ROOT@example.com ")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	assert.True(t, cfg.IsAdminEmail("TEAM@example.com"))
+	assert.True(t, cfg.IsSuperAdminEmail("root@example.com"))
+	assert.Equal(t, []string{"admin@example.com", "team@example.com"}, cfg.AdminEmails)
+	assert.Equal(t, []string{"root@example.com"}, cfg.SuperAdminEmails)
+}

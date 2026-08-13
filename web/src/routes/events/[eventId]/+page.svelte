@@ -425,7 +425,7 @@
 		<!-- Back link + actions -->
 		<div class="mb-6 flex items-center justify-between">
 			<a href="/events" class="text-sm text-primary hover:text-primary-hover">&larr; Back to events</a>
-			<div class="flex items-center gap-2">
+			{#if !event.suspendedAt}<div class="flex items-center gap-2">
 				<Button variant="outline" size="sm" href="/events/{eventId}/edit">Edit</Button>
 				<Button variant="outline" size="sm" href="/events/{eventId}/invite">Design Invite</Button>
 				<Button variant="outline" size="sm" href="/events/{eventId}/share">Share</Button>
@@ -433,8 +433,16 @@
 				<Button variant="outline" size="sm" href="/events/{eventId}/import">Import Guests</Button>
 				<Button variant="outline" size="sm" href="/events/{eventId}/webhooks">Webhooks</Button>
 				<Button variant="outline" size="sm" onclick={duplicateEvent}>Duplicate</Button>
-			</div>
+			</div>{/if}
 		</div>
+
+		{#if event.suspendedAt}
+			<div class="mb-4 rounded-lg border border-error bg-error-light px-4 py-3 text-sm text-error">
+				<p class="font-semibold">This event has been suspended by an administrator and is read-only.</p>
+				{#if event.suspensionReason}<p class="mt-1">Reason: {event.suspensionReason}</p>{/if}
+				<p class="mt-1">Its public invitation and RSVP link are unavailable until an administrator restores it.</p>
+			</div>
+		{/if}
 
 		<!-- Series banner -->
 		{#if event.seriesId}
@@ -475,13 +483,13 @@
 				</div>
 				<div class="flex flex-col items-end gap-2">
 					<Badge variant={statusVariant(event.status)}>{event.status}</Badge>
-					{#if event.status === 'draft'}
+					{#if !event.suspendedAt && event.status === 'draft'}
 						<Button size="sm" onclick={publishEvent}>Publish</Button>
-					{:else if event.status === 'published'}
+					{:else if !event.suspendedAt && event.status === 'published'}
 						{#if event.organizerId === currentUserId}
 							<Button variant="danger" size="sm" onclick={() => showCancelModal = true}>Cancel Event</Button>
 						{/if}
-					{:else if event.status === 'cancelled'}
+					{:else if !event.suspendedAt && event.status === 'cancelled'}
 						{#if event.organizerId === currentUserId}
 							<Button size="sm" onclick={reopenEvent}>Re-open as Draft</Button>
 						{/if}

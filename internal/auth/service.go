@@ -17,9 +17,10 @@ import (
 )
 
 var (
-	ErrInvalidEmail    = errors.New("invalid email address")
-	ErrInvalidToken    = errors.New("invalid or expired token")
-	ErrSessionNotFound = errors.New("session not found")
+	ErrInvalidEmail     = errors.New("invalid email address")
+	ErrInvalidToken     = errors.New("invalid or expired token")
+	ErrSessionNotFound  = errors.New("session not found")
+	ErrAccountSuspended = errors.New("account suspended")
 )
 
 // EmailSender is a function that sends an email. This avoids a direct
@@ -65,10 +66,18 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 	}
 
 	if organizer == nil {
+		if !s.cfg.AllowSignups && !s.cfg.IsAdminEmail(email) && !s.cfg.IsSuperAdminEmail(email) {
+			return nil
+		}
 		organizer, err = s.store.CreateOrganizer(ctx, email)
 		if err != nil {
 			return fmt.Errorf("create organizer: %w", err)
 		}
+	}
+	if organizer.SuspendedAt != nil {
+		// Keep the public endpoint non-enumerating while ensuring suspended
+		// accounts cannot accumulate fresh authentication credentials.
+		return nil
 	}
 
 	// Generate 32-byte random token.
@@ -172,19 +181,17 @@ func (s *Service) VerifyMagicLink(ctx context.Context, rawToken string) (*AuthRe
 	if err != nil {
 		return nil, fmt.Errorf("find organizer: %w", err)
 	}
+	if organizer.SuspendedAt != nil {
+		return nil, ErrAccountSuspended
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 
-	// Sync admin status from ADMIN_EMAILS env var on every login.
-	shouldBeAdmin := s.cfg.IsAdminEmail(organizer.Email)
-	if organizer.IsAdmin != shouldBeAdmin {
-		if err := s.store.SetAdminStatus(ctx, organizer.ID, shouldBeAdmin); err != nil {
-			s.logger.Error().Err(err).Str("organizer_id", organizer.ID).Msg("failed to sync admin status")
-		} else {
-			organizer.IsAdmin = shouldBeAdmin
-		}
+	s.applyEffectiveRole(organizer)
+	if err := s.store.SetLastLogin(ctx, organizer.ID); err != nil {
+		s.logger.Error().Err(err).Str("organizer_id", organizer.ID).Msg("failed to record last login")
 	}
 
 	return &AuthResponse{
@@ -217,18 +224,62 @@ func (s *Service) ValidateSession(ctx context.Context, rawToken string) (*Organi
 	if err != nil {
 		return nil, fmt.Errorf("find organizer: %w", err)
 	}
-
-	// Sync admin status on every session validation so that changes to
-	// ADMIN_EMAILS take effect without requiring re-login.
-	if shouldBeAdmin := s.cfg.IsAdminEmail(organizer.Email); organizer.IsAdmin != shouldBeAdmin {
-		if err := s.store.SetAdminStatus(ctx, organizer.ID, shouldBeAdmin); err != nil {
-			s.logger.Error().Err(err).Str("organizer_id", organizer.ID).Msg("failed to sync admin status")
-		} else {
-			organizer.IsAdmin = shouldBeAdmin
-		}
+	if organizer == nil || organizer.SuspendedAt != nil {
+		_ = s.store.DeleteSession(ctx, session.ID)
+		return nil, ErrSessionNotFound
 	}
 
+	s.applyEffectiveRole(organizer)
+
 	return organizer, nil
+}
+
+func roleRank(role string) int {
+	switch role {
+	case RoleSuperAdmin:
+		return 2
+	case RoleAdmin:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func (s *Service) applyEffectiveRole(organizer *Organizer) {
+	minimum := RoleOrganizer
+	if s.cfg.IsAdminEmail(organizer.Email) {
+		minimum = RoleAdmin
+	}
+	if s.cfg.IsSuperAdminEmail(organizer.Email) {
+		minimum = RoleSuperAdmin
+	}
+	effective := organizer.StoredRole
+	if roleRank(minimum) > roleRank(effective) {
+		effective = minimum
+	}
+	organizer.MinimumRole = minimum
+	organizer.RoleManagedByEnvironment = minimum != RoleOrganizer
+	organizer.Role = effective
+	organizer.IsAdmin = roleRank(effective) >= roleRank(RoleAdmin)
+	organizer.IsSuperAdmin = effective == RoleSuperAdmin
+}
+
+// ApplyEffectiveRole decorates an organizer loaded outside the auth request
+// flow with its environment-aware effective role.
+func (s *Service) ApplyEffectiveRole(organizer *Organizer) { s.applyEffectiveRole(organizer) }
+
+// SendMagicLinkToExisting sends a sign-in link without creating a new account.
+func (s *Service) SendMagicLinkToExisting(ctx context.Context, organizer *Organizer) error {
+	if organizer == nil {
+		return ErrInvalidEmail
+	}
+	if organizer.SuspendedAt != nil {
+		return ErrAccountSuspended
+	}
+	if err := s.store.InvalidateUnusedMagicLinks(ctx, organizer.ID); err != nil {
+		return err
+	}
+	return s.RequestMagicLink(ctx, organizer.Email)
 }
 
 // Logout invalidates the session associated with the given raw token.

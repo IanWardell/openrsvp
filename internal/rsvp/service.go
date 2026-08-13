@@ -537,6 +537,9 @@ func (s *Service) GetByToken(ctx context.Context, rsvpToken string) (*Attendee, 
 	if a == nil {
 		return nil, fmt.Errorf("rsvp not found")
 	}
+	if suspended, err := s.eventService.IsEffectivelySuspended(ctx, a.EventID); err != nil || suspended {
+		return nil, fmt.Errorf("attendee not found")
+	}
 	return a, nil
 }
 
@@ -548,6 +551,9 @@ func (s *Service) GetByTokenWithEvent(ctx context.Context, rsvpToken string) (*R
 	}
 	if a == nil {
 		return nil, fmt.Errorf("rsvp not found")
+	}
+	if suspended, err := s.eventService.IsEffectivelySuspended(ctx, a.EventID); err != nil || suspended {
+		return nil, fmt.Errorf("attendee not found")
 	}
 
 	ev, err := s.eventService.GetByID(ctx, a.EventID)
@@ -626,6 +632,9 @@ func (s *Service) UpdateByToken(ctx context.Context, rsvpToken string, req Updat
 	}
 	if a == nil {
 		return nil, fmt.Errorf("rsvp not found")
+	}
+	if suspended, err := s.eventService.IsEffectivelySuspended(ctx, a.EventID); err != nil || suspended {
+		return nil, fmt.Errorf("attendee not found")
 	}
 
 	// Check if RSVPs are closed for this event (deadline enforcement).

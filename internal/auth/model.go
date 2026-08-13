@@ -2,15 +2,31 @@ package auth
 
 import "time"
 
+const (
+	RoleOrganizer  = "organizer"
+	RoleAdmin      = "admin"
+	RoleSuperAdmin = "super_admin"
+)
+
 // Organizer represents a user who creates and manages events.
 type Organizer struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Timezone  string    `json:"timezone"`
-	IsAdmin   bool      `json:"isAdmin"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID                       string     `json:"id"`
+	Email                    string     `json:"email"`
+	Name                     string     `json:"name"`
+	Timezone                 string     `json:"timezone"`
+	Role                     string     `json:"role"`
+	StoredRole               string     `json:"storedRole"`
+	MinimumRole              string     `json:"minimumRole"`
+	RoleManagedByEnvironment bool       `json:"roleManagedByEnvironment"`
+	IsAdmin                  bool       `json:"isAdmin"`
+	IsSuperAdmin             bool       `json:"isSuperAdmin"`
+	InvitedAt                *time.Time `json:"invitedAt,omitempty"`
+	LastLoginAt              *time.Time `json:"lastLoginAt,omitempty"`
+	SuspendedAt              *time.Time `json:"suspendedAt,omitempty"`
+	SuspendedBy              string     `json:"suspendedBy,omitempty"`
+	SuspensionReason         string     `json:"suspensionReason,omitempty"`
+	CreatedAt                time.Time  `json:"createdAt"`
+	UpdatedAt                time.Time  `json:"updatedAt"`
 }
 
 // UpdateProfileRequest is the request body for updating an organizer's profile.

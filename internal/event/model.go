@@ -4,16 +4,16 @@ import "time"
 
 // Event represents a gathering that an organizer creates and shares.
 type Event struct {
-	ID            string     `json:"id"`
-	OrganizerID   string     `json:"organizerId"`
-	Title         string     `json:"title"`
-	Description   string     `json:"description"`
-	EventDate     time.Time  `json:"eventDate"`
-	EndDate       *time.Time `json:"endDate,omitempty"`
-	Location      string     `json:"location"`
-	Timezone      string     `json:"timezone"`
-	RetentionDays int        `json:"retentionDays"`
-	Status        string     `json:"status"`
+	ID                 string     `json:"id"`
+	OrganizerID        string     `json:"organizerId"`
+	Title              string     `json:"title"`
+	Description        string     `json:"description"`
+	EventDate          time.Time  `json:"eventDate"`
+	EndDate            *time.Time `json:"endDate,omitempty"`
+	Location           string     `json:"location"`
+	Timezone           string     `json:"timezone"`
+	RetentionDays      int        `json:"retentionDays"`
+	Status             string     `json:"status"`
 	ShareToken         string     `json:"shareToken"`
 	ContactRequirement string     `json:"contactRequirement"`
 	ShowHeadcount      bool       `json:"showHeadcount"`
@@ -25,6 +25,9 @@ type Event struct {
 	SeriesID           *string    `json:"seriesId,omitempty"`
 	SeriesIndex        *int       `json:"seriesIndex,omitempty"`
 	SeriesOverride     bool       `json:"seriesOverride"`
+	SuspendedAt        *time.Time `json:"suspendedAt,omitempty"`
+	SuspendedBy        string     `json:"suspendedBy,omitempty"`
+	SuspensionReason   string     `json:"suspensionReason,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }

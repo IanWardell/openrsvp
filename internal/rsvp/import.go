@@ -79,7 +79,7 @@ func (s *Service) ParseCSVPreview(ctx context.Context, eventID, organizerID stri
 	if err != nil {
 		return nil, fmt.Errorf("event not found")
 	}
-	canManage, err := s.eventService.CanManageEvent(ctx, eventID, organizerID)
+	canManage, err := s.eventService.CanOperateEvent(ctx, eventID, organizerID)
 	if err != nil {
 		return nil, fmt.Errorf("check event ownership: %w", err)
 	}
@@ -234,7 +234,7 @@ func (s *Service) ExecuteCSVImport(ctx context.Context, eventID, organizerID str
 	if err != nil {
 		return nil, fmt.Errorf("event not found")
 	}
-	canManage, err := s.eventService.CanManageEvent(ctx, eventID, organizerID)
+	canManage, err := s.eventService.CanOperateEvent(ctx, eventID, organizerID)
 	if err != nil {
 		return nil, fmt.Errorf("check event ownership: %w", err)
 	}

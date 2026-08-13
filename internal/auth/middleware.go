@@ -60,3 +60,17 @@ func RequireAdmin() func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// RequireSuperAdmin permits only effective super administrators.
+func RequireSuperAdmin() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			organizer := OrganizerFromContext(r.Context())
+			if organizer == nil || !organizer.IsSuperAdmin {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}

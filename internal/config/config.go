@@ -70,8 +70,10 @@ type Config struct {
 	EmailOpenTrackingEnabled  bool
 	EmailClickTrackingEnabled bool
 
-	// Admin
-	AdminEmails []string
+	// Admin role floors. Database roles may grant equal or greater access, but
+	// an environment-managed role can never be lowered through the UI.
+	AdminEmails      []string
+	SuperAdminEmails []string
 
 	// Instance settings overlaid from the database (first-run setup wizard).
 	// These are non-secret values that an operator may set via the UI instead
@@ -216,15 +218,35 @@ func Load() (*Config, error) {
 			}
 		}
 	}
+	if raw := getEnv("SUPER_ADMIN_EMAILS", ""); raw != "" {
+		for _, email := range strings.Split(raw, ",") {
+			email = strings.TrimSpace(strings.ToLower(email))
+			if email != "" {
+				cfg.SuperAdminEmails = append(cfg.SuperAdminEmails, email)
+			}
+		}
+	}
 
 	return cfg, nil
 }
 
 // IsAdminEmail returns true if the given email is in the ADMIN_EMAILS list.
 func (c *Config) IsAdminEmail(email string) bool {
-	email = strings.ToLower(email)
+	email = strings.ToLower(strings.TrimSpace(email))
 	for _, ae := range c.AdminEmails {
 		if ae == email {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSuperAdminEmail reports whether email has a deployment-managed
+// super-admin role.
+func (c *Config) IsSuperAdminEmail(email string) bool {
+	email = strings.ToLower(strings.TrimSpace(email))
+	for _, configured := range c.SuperAdminEmails {
+		if configured == email {
 			return true
 		}
 	}

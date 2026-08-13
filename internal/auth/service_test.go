@@ -214,10 +214,11 @@ func TestVerifyMagicLinkSyncsAdminStatus(t *testing.T) {
 	require.NotNil(t, resp)
 	assert.True(t, resp.Organizer.IsAdmin, "admin status should be synced on login")
 
-	// Verify in DB.
+	// The environment grants a minimum effective role without rewriting the
+	// persisted database role.
 	updated, err := store.FindOrganizerByID(ctx, org.ID)
 	require.NoError(t, err)
-	assert.True(t, updated.IsAdmin)
+	assert.Equal(t, RoleOrganizer, updated.StoredRole)
 }
 
 func TestVerifyMagicLinkRevokesAdmin(t *testing.T) {
@@ -244,7 +245,8 @@ func TestVerifyMagicLinkRevokesAdmin(t *testing.T) {
 	resp, err := svc.VerifyMagicLink(ctx, rawToken)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.False(t, resp.Organizer.IsAdmin, "admin status should be revoked when email removed from ADMIN_EMAILS")
+	assert.True(t, resp.Organizer.IsAdmin, "database-assigned admin remains elevated when removed from ADMIN_EMAILS")
+	assert.Equal(t, RoleAdmin, resp.Organizer.Role)
 }
 
 func TestRequireAdminMiddleware(t *testing.T) {

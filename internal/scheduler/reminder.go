@@ -11,6 +11,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/database"
 	"github.com/yannkr/openrsvp/internal/notification"
 	"github.com/yannkr/openrsvp/internal/notification/templates"
+	"github.com/yannkr/openrsvp/internal/timezone"
 )
 
 // ReminderJob polls for due reminders and sends notifications to the
@@ -234,7 +235,7 @@ func (j *ReminderJob) sendToAttendee(ctx context.Context, reminder *Reminder, at
 
 	// Try email first.
 	if attendee.email != nil && *attendee.email != "" {
-		eventDate := ev.eventDate.Format("January 2, 2006 at 3:04 PM")
+		eventDate := timezone.FormatEventDate(ev.eventDate, ev.timezone)
 		location := ev.location
 		if location == "" {
 			location = "TBD"

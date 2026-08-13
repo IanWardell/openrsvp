@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import type { InstanceStats, ApiResponse } from '$lib/types';
-	import AppShell from '$lib/components/layout/AppShell.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 
 	let stats = $state<InstanceStats | null>(null);
@@ -65,7 +64,6 @@
 	] : []);
 </script>
 
-<AppShell>
 	<div class="space-y-8">
 		<div>
 			<h1 class="text-2xl font-bold font-display text-neutral-900">Instance Admin</h1>
@@ -183,4 +181,3 @@
 			</div>
 		{/if}
 	</div>
-</AppShell>

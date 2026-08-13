@@ -29,7 +29,7 @@
 			const result = await api.post<{ token: string; organizer: Organizer }>('/auth/verify', { token });
 			$currentUser = result.organizer;
 			toast.success('Successfully signed in!');
-			goto('/events');
+			await goto('/events');
 		} catch (err: unknown) {
 			const apiErr = err as { message?: string };
 			error = apiErr.message || 'Verification failed. The link may have expired.';

@@ -103,7 +103,7 @@ func (h *Handler) handleVerify(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.service.VerifyMagicLink(r.Context(), req.Token)
 	if err != nil {
-		if err == ErrInvalidToken {
+		if err == ErrInvalidToken || err == ErrAccountSuspended {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired token"})
 			return
 		}

@@ -49,6 +49,7 @@ extract_routes() {
   extract_routes comment      /comments
   extract_routes webhook      /webhooks
   extract_routes notification /notifications
+  extract_routes admin          /admin
   extract_routes suppression    /unsubscribe
   extract_routes instanceconfig /setup
 

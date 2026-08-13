@@ -32,14 +32,17 @@ func NewHandler(service *Service, authMiddleware func(http.Handler) http.Handler
 // Routes returns a chi.Router with the setup wizard routes.
 //
 // GET  /status  is public so the SPA can decide whether to show the wizard.
-// GET  /config  and POST /config are admin-only (RequireAuth + RequireAdmin).
+// GET /config and POST /config are super-admin-only. The middleware is named
+// generically here so this package does not need to know the application's
+// concrete role model.
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
 	// Public: no auth, no CSRF (GET).
 	r.Get("/status", h.handleStatus)
 
-	// Admin-only: auth + admin. POST is CSRF-protected by the global middleware.
+	// Privileged-only: auth + supplied role middleware. POST is CSRF-protected
+	// by the global middleware.
 	r.Group(func(r chi.Router) {
 		r.Use(h.authMiddleware)
 		r.Use(h.adminMiddleware)

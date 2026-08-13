@@ -91,6 +91,32 @@ func (s *Service) CanManageEvent(ctx context.Context, eventID, organizerID strin
 	return cohost != nil, nil
 }
 
+// CanOperateEvent checks membership and ensures moderation has not locked the
+// event. It is used by subresource handlers whose routes include mutations.
+func (s *Service) CanOperateEvent(ctx context.Context, eventID, organizerID string) (bool, error) {
+	canManage, err := s.CanManageEvent(ctx, eventID, organizerID)
+	if err != nil || !canManage {
+		return canManage, err
+	}
+	suspended, err := s.store.IsEffectivelySuspended(ctx, eventID)
+	return !suspended, err
+}
+
+func (s *Service) ensureEventOperable(ctx context.Context, eventID string) error {
+	suspended, err := s.store.IsEffectivelySuspended(ctx, eventID)
+	if err != nil {
+		return err
+	}
+	if suspended {
+		return fmt.Errorf("event is suspended")
+	}
+	return nil
+}
+
+func (s *Service) IsEffectivelySuspended(ctx context.Context, eventID string) (bool, error) {
+	return s.store.IsEffectivelySuspended(ctx, eventID)
+}
+
 // IsEventOwner checks whether the given organizer is the owner (not co-host) of
 // the event.
 func (s *Service) IsEventOwner(ctx context.Context, eventID, organizerID string) (bool, error) {
@@ -320,6 +346,9 @@ func (s *Service) Update(ctx context.Context, eventID, organizerID string, req U
 	if e == nil {
 		return nil, fmt.Errorf("event not found")
 	}
+	if err := s.ensureEventOperable(ctx, eventID); err != nil {
+		return nil, err
+	}
 
 	canManage, err := s.CanManageEvent(ctx, eventID, organizerID)
 	if err != nil {
@@ -435,6 +464,9 @@ func (s *Service) Publish(ctx context.Context, eventID, organizerID string) (*Ev
 	if e == nil {
 		return nil, fmt.Errorf("event not found")
 	}
+	if err := s.ensureEventOperable(ctx, eventID); err != nil {
+		return nil, err
+	}
 
 	canManage, err := s.CanManageEvent(ctx, eventID, organizerID)
 	if err != nil {
@@ -471,6 +503,9 @@ func (s *Service) Cancel(ctx context.Context, eventID, organizerID string, notif
 	if e == nil {
 		return nil, fmt.Errorf("event not found")
 	}
+	if err := s.ensureEventOperable(ctx, eventID); err != nil {
+		return nil, err
+	}
 
 	canManage, err := s.CanManageEvent(ctx, eventID, organizerID)
 	if err != nil {
@@ -505,6 +540,9 @@ func (s *Service) Reopen(ctx context.Context, eventID, organizerID string) (*Eve
 	if e == nil {
 		return nil, fmt.Errorf("event not found")
 	}
+	if err := s.ensureEventOperable(ctx, eventID); err != nil {
+		return nil, err
+	}
 
 	canManage, err := s.CanManageEvent(ctx, eventID, organizerID)
 	if err != nil {
@@ -534,6 +572,9 @@ func (s *Service) Duplicate(ctx context.Context, eventID, organizerID string) (*
 	}
 	if e == nil {
 		return nil, fmt.Errorf("event not found")
+	}
+	if err := s.ensureEventOperable(ctx, eventID); err != nil {
+		return nil, err
 	}
 	if e.OrganizerID != organizerID {
 		return nil, fmt.Errorf("forbidden: you do not own this event")
@@ -590,6 +631,9 @@ func (s *Service) Delete(ctx context.Context, eventID, organizerID string) error
 	}
 	if e == nil {
 		return fmt.Errorf("event not found")
+	}
+	if err := s.ensureEventOperable(ctx, eventID); err != nil {
+		return err
 	}
 	if e.OrganizerID != organizerID {
 		return fmt.Errorf("forbidden: you do not own this event")

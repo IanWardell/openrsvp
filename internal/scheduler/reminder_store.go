@@ -93,8 +93,9 @@ func (s *ReminderStore) FindDue(ctx context.Context) ([]*Reminder, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, event_id, remind_at, target_group, message, status, created_at, updated_at
-		 FROM reminders WHERE remind_at <= ? AND status = 'scheduled'
+		`SELECT r.id, r.event_id, r.remind_at, r.target_group, r.message, r.status, r.created_at, r.updated_at
+		 FROM reminders r JOIN events e ON e.id=r.event_id JOIN organizers o ON o.id=e.organizer_id
+		 WHERE r.remind_at <= ? AND r.status = 'scheduled' AND e.suspended_at IS NULL AND o.suspended_at IS NULL
 		 ORDER BY remind_at ASC`, now,
 	)
 	if err != nil {
