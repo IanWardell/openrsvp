@@ -634,6 +634,29 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 
 ## 📝 Changelog
 
+### v1.10.0 (2026-08-13)
+
+**Administration:**
+- Add live super-admin settings for enabling or disabling public organizer signups without rerunning setup or restarting the application
+- Add independent opt-in notifications for new organizers and promotions to admin or super admin
+- Protect the Settings route from regular-admin access and retain server-side authorization enforcement
+
+**User interface and project links:**
+- Fix Chrome dark-mode contrast for native role selectors
+- Point landing-page GitHub links to `IanWardell/openrsvp`
+
+**Delivery controls:**
+- Protect `main`, `release`, and release tags with repository rulesets
+- Require tested `main` commits for release promotion and publish candidate images from `release`
+- Publish immutable semantic-version images and GitHub Releases only from matching annotated `v*` tags
+- Add container smoke testing, SHA image tags, provenance, and SBOM metadata
+
+**Historical image note:** the pre-v1.10 branch-driven workflow republished
+the `1.9.0` container tag from commit `0cc7194`, although Git tag `v1.9.0`
+points to commit `ed0b76a`. That historical container tag is documented as
+mutable; v1.10.0 fixes forward and is the first release under the immutable
+tag-driven workflow.
+
 ### v1.9.0 (2026-08-12)
 
 **Admin and authorization:**
@@ -930,6 +953,35 @@ Contributions are welcome! Here's how to get started:
 3. Commit your changes
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+### Maintainer release process
+
+`main` is the tested development branch. `release` is advanced only by a
+fast-forward from a `main` commit whose required CI checks have passed. A push
+to `release` publishes only the mutable `candidate` tag and an immutable
+commit-specific `sha-*` image tag.
+
+Stable releases require `VERSION` and `.github/releases/vX.Y.Z.md` to be
+committed on `main`, promoted to `release`, and tagged with an annotated tag:
+
+```bash
+git switch main
+git push origin main
+# Wait for all required CI checks to pass.
+
+git switch release
+git merge --ff-only origin/main
+git push origin release
+
+git tag -a vX.Y.Z -m "OpenRSVP vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+The tag-triggered release workflow verifies that the tag matches `VERSION`,
+that its commit exists on both protected branches, and that neither the GitHub
+Release nor semantic container tag already exists. It then publishes the
+version, minor, major, `latest` (stable releases only), and `sha-*` image tags
+and creates the GitHub Release.
 
 ## 📄 License
 
