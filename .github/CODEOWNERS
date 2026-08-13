@@ -1,0 +1,4 @@
+# Deployment and release controls require review by the repository owner.
+/.github/workflows/release.yml @IanWardell
+/Dockerfile @IanWardell
+/VERSION @IanWardell
