@@ -62,7 +62,7 @@ func (s *Store) ListUsers(ctx context.Context, search string, page, size int) ([
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []UserSummary{}
 	for rows.Next() {
 		var u UserSummary
@@ -110,7 +110,7 @@ func (s *Store) ListEvents(ctx context.Context, search, status string, page, siz
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []EventSummary{}
 	for rows.Next() {
 		var e EventSummary
@@ -151,7 +151,7 @@ func (s *Store) ListGuests(ctx context.Context, search string, page, size int, r
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []GuestSummary{}
 	for rows.Next() {
 		var g GuestSummary
@@ -237,7 +237,7 @@ func (s *Store) ListAudit(ctx context.Context, page, size int) ([]AuditEntry, in
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []AuditEntry{}
 	for rows.Next() {
 		var a AuditEntry
@@ -272,7 +272,7 @@ func (s *Store) ListOwnedEventIDs(ctx context.Context, organizerID string) ([]st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	ids := []string{}
 	for rows.Next() {
 		var id string
@@ -303,7 +303,7 @@ func (s *Store) FindGuestParticipation(ctx context.Context, g *GuestSummary) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []GuestSummary{}
 	for rows.Next() {
 		var x GuestSummary
