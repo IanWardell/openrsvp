@@ -12,6 +12,10 @@ updates:
       - "/tests/e2e"
     schedule:
       interval: "weekly"
+    ignore:
+      # SvelteKit 2.70.2 supports TypeScript 5 and 6, but not TypeScript 7.
+      - dependency-name: "typescript"
+        versions: ["7.x"]
 
   - package-ecosystem: "docker"
     directory: "/"
