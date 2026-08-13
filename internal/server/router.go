@@ -62,10 +62,19 @@ func (s *Server) routes() *chi.Mux {
 
 		// Public app config (non-sensitive feature flags).
 		api.Get("/config", func(w http.ResponseWriter, r *http.Request) {
+			allowSignups, err := s.instanceConfigService.OrganizerSignupsAllowed(r.Context(), s.cfg.AllowSignups)
+			if err != nil {
+				// Preserve availability of the public application shell if the
+				// live setting cannot be read. The startup-applied value is the
+				// safest available fallback.
+				s.logger.Error().Err(err).Msg("failed to read public organizer signup policy")
+				allowSignups = s.cfg.AllowSignups
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
-					"smsEnabled": s.cfg.SMSEnabled(),
+					"smsEnabled":   s.cfg.SMSEnabled(),
+					"allowSignups": allowSignups,
 				},
 			})
 		})

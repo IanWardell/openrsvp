@@ -58,6 +58,7 @@ type Server struct {
 	adminHandler          *adminconsole.Handler
 	suppressionHandler    *suppression.Handler
 	instanceConfigHandler *instanceconfig.Handler
+	instanceConfigService *instanceconfig.Service
 	scheduler             *scheduler.Scheduler
 	securityMw            *security.Middleware
 	uploadsDir            string
@@ -980,6 +981,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		adminHandler:          adminHandler,
 		suppressionHandler:    suppressionHandler,
 		instanceConfigHandler: instanceConfigHandler,
+		instanceConfigService: instanceConfigService,
 		scheduler:             sched,
 		securityMw:            secMw,
 		uploadsDir:            uploadsDir,

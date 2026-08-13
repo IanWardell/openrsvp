@@ -40,12 +40,27 @@ test.describe.serial('OpenRSVP E2E', () => {
 	test('API config returns feature flags', async ({ request }) => {
 		const res = await request.get('/api/v1/config');
 		expect(res.status()).toBe(200);
-		expect(typeof (await res.json()).data.smsEnabled).toBe('boolean');
+		const config = (await res.json()).data;
+		expect(typeof config.smsEnabled).toBe('boolean');
+		expect(typeof config.allowSignups).toBe('boolean');
 	});
 
 	// ─── Authentication ──────────────────────────────────
 	test('login page renders with email input', async ({ page }) => {
 		await page.goto('/auth/login');
+		await expect(page.locator('input[type="email"]')).toBeVisible();
+	});
+
+	test('closed signup policy is explained without blocking existing organizer sign-in', async ({ page }) => {
+		await page.route('**/api/v1/config', async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ data: { smsEnabled: false, allowSignups: false } })
+			});
+		});
+		await page.goto('/auth/login');
+		await expect(page.getByText('Public organizer registration is closed.')).toBeVisible();
 		await expect(page.locator('input[type="email"]')).toBeVisible();
 	});
 
@@ -56,6 +71,7 @@ test.describe.serial('OpenRSVP E2E', () => {
 		await expect(
 			page.getByRole('heading', { name: /check your email/i })
 		).toBeVisible({ timeout: 10000 });
+		await expect(page.getByText(/If an account exists for/)).toBeVisible();
 	});
 
 	test('authenticate via magic link', async () => {

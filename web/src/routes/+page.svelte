@@ -1,5 +1,13 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { isAuthenticated } from '$lib/stores/auth';
+	import { allowSignups, appConfigLoaded, loadAppConfig } from '$lib/stores/config';
+
+	onMount(() => {
+		// Refresh on each visit so a live admin policy change is reflected when
+		// returning to the homepage in the same browser session.
+		loadAppConfig(true);
+	});
 </script>
 
 <svelte:head>
@@ -34,12 +42,14 @@
 					>
 						Sign In
 					</a>
-					<a
-						href="/auth/login"
-						class="rounded-md bg-primary px-5 py-2 text-sm font-semibold text-white hover:bg-primary-hover transition-colors shadow-sm"
-					>
-						Get Started
-					</a>
+					{#if $appConfigLoaded && $allowSignups}
+						<a
+							href="/auth/login"
+							class="rounded-md bg-primary px-5 py-2 text-sm font-semibold text-white hover:bg-primary-hover transition-colors shadow-sm"
+						>
+							Get Started
+						</a>
+					{/if}
 				{/if}
 			</div>
 		</nav>
@@ -76,10 +86,14 @@
 
 				<div class="flex flex-col sm:flex-row items-center justify-center gap-4">
 					<a
-						href="/auth/login"
+						href={$isAuthenticated ? '/events/new' : '/auth/login'}
 						class="group inline-flex items-center gap-2 rounded-lg bg-primary px-8 py-3.5 text-lg font-semibold text-white hover:bg-primary-hover transition-all shadow-lg shadow-primary/25 hover:shadow-primary/40"
 					>
-						Create Your First Event
+						{$isAuthenticated
+							? 'Create an Event'
+							: $appConfigLoaded && $allowSignups
+								? 'Create Your First Event'
+								: 'Organizer Sign In'}
 						<svg class="w-5 h-5 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
 							<path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
 						</svg>
@@ -262,16 +276,30 @@
 			</div>
 			<div class="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
 				<h2 class="font-display text-3xl sm:text-4xl font-bold text-white mb-6">
-					Ready to create your first invitation?
+					{$isAuthenticated || ($appConfigLoaded && $allowSignups)
+						? 'Ready to create your first invitation?'
+						: $appConfigLoaded
+							? 'Already an organizer here?'
+							: 'Manage your invitations'}
 				</h2>
 				<p class="text-lg text-rose-100 mb-10 max-w-2xl mx-auto">
-					Join organizers who value privacy and beautiful design. Get started for free in under a minute.
+					{$isAuthenticated
+						? 'Create another event and start collecting RSVPs in minutes.'
+						: $appConfigLoaded && $allowSignups
+							? 'Join organizers who value privacy and beautiful design. Get started for free in under a minute.'
+							: $appConfigLoaded
+								? 'Public organizer registration is closed. Existing and invited organizers can still sign in.'
+								: 'Existing organizers can sign in to create events and manage RSVPs.'}
 				</p>
 				<a
-					href="/auth/login"
+					href={$isAuthenticated ? '/events/new' : '/auth/login'}
 					class="inline-flex items-center gap-2 rounded-lg bg-surface px-8 py-3.5 text-lg font-semibold text-primary hover:bg-primary-lighter transition-colors shadow-lg"
 				>
-					Get Started Free
+					{$isAuthenticated
+						? 'Create an Event'
+						: $appConfigLoaded && $allowSignups
+							? 'Get Started Free'
+							: 'Organizer Sign In'}
 					<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
 					</svg>
