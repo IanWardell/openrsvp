@@ -634,6 +634,16 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 
 ## 📝 Changelog
 
+### v1.10.1 (2026-08-13)
+
+**Public signup policy:**
+- Make the homepage respect the live public organizer signup policy from the instance settings API
+- Hide the public organizer signup form when public organizer signups are disabled, while keeping existing organizer sign-in available
+- Replace email-specific magic-link confirmation text with an account-enumeration-safe notice
+
+**Maintainer workflow:**
+- Document the repository's Git, release-candidate, and stable release process in `git-usage.md`
+
 ### v1.10.0 (2026-08-13)
 
 **Administration:**
