@@ -53,7 +53,7 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
 
 ### Prerequisites
 
-- Go 1.25+ (the `toolchain go1.26.3` directive auto-fetches the patched compiler when `GOTOOLCHAIN=auto`, the default)
+- Go 1.25+ (the `toolchain go1.26.6` directive auto-fetches the patched compiler when `GOTOOLCHAIN=auto`, the default)
 - Node.js 22+
 - Make
 
@@ -643,6 +643,9 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 
 **Maintainer workflow:**
 - Document the repository's Git, release-candidate, and stable release process in `git-usage.md`
+
+**Security tooling:**
+- Update the project Go toolchain and CI vulnerability scan pin to Go 1.26.6 so `govulncheck` runs against the patched standard library
 
 ### v1.10.0 (2026-08-13)
 
