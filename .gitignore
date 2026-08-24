@@ -24,6 +24,7 @@ web/build/
 
 # Environment
 .env
+.envs
 .env.local
 .env.*.local
 
@@ -39,6 +40,7 @@ web/playwright-report/
 tmp/
 
 # Local tooling / AI artifacts (do not commit)
+.codex/
 .gstack/
 .claude/
 _bmad/
