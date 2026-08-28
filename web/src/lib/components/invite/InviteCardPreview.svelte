@@ -200,7 +200,7 @@
 	}
 </script>
 
-{#if templateId === 'botanical-save-the-date'}
+{#if templateId === 'botanical-save-the-date' || templateId === 'custom-card'}
 	<BotanicalInvite
 		{heading}
 		{body}
@@ -406,7 +406,6 @@
 	.bg-image-overlay-dark {
 		background: rgba(28, 25, 23, 0.88);
 	}
-
 	/* Balloon Party */
 	.balloon-party {
 		border-style: dashed;

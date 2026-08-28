@@ -76,8 +76,28 @@
 	const qrConfig = $derived(
 		(parsedCustomData.qr as Record<string, unknown> | undefined) || {}
 	);
+	function safeImageUrl(raw: unknown): string {
+		if (typeof raw !== 'string' || !raw.trim() || /[()'"<>\\]/.test(raw)) return '';
+		const value = raw.trim();
+		if (value.startsWith('/')) return value;
+		try {
+			const parsed = new URL(value);
+			return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? value : '';
+		} catch {
+			return '';
+		}
+	}
 	const photoUrl = $derived(
-		typeof parsedCustomData.backgroundImage === 'string' ? parsedCustomData.backgroundImage : ''
+		safeImageUrl(parsedCustomData.backgroundImage)
+	);
+	const cardBackgroundUrl = $derived(safeImageUrl(parsedCustomData.cardBackgroundImage));
+	const cardBackgroundConfig = $derived(
+		(parsedCustomData.cardBackground as Record<string, unknown> | undefined) || {}
+	);
+	const envelopeFlapColor = $derived(
+		typeof parsedCustomData.envelopeFlapColor === 'string'
+			? parsedCustomData.envelopeFlapColor
+			: '#aebda9'
 	);
 	const photoConfig = $derived(
 		(parsedCustomData.photo as Record<string, unknown> | undefined) || {}
@@ -112,6 +132,10 @@
 	const photoPositionX = $derived(clampNumber(photoConfig.x, 0, 100, 50));
 	const photoPositionY = $derived(clampNumber(photoConfig.y, 0, 100, 50));
 	const photoZoom = $derived(clampNumber(photoConfig.zoom, 1, 2, 1));
+	const cardBackgroundFit = $derived(cardBackgroundConfig.fit === 'contain' ? 'contain' : 'cover');
+	const cardBackgroundX = $derived(clampNumber(cardBackgroundConfig.x, 0, 100, 50));
+	const cardBackgroundY = $derived(clampNumber(cardBackgroundConfig.y, 0, 100, 50));
+	const cardBackgroundZoom = $derived(clampNumber(cardBackgroundConfig.zoom, 1, 2, 1));
 	const photoLayoutX = $derived(clampNumber(photoConfig.layoutX, 0, 82, 60));
 	const photoLayoutY = $derived(clampNumber(photoConfig.layoutY, 0, 82, 15));
 	const photoSize = $derived(clampNumber(photoConfig.size, 18, 50, 35));
@@ -262,6 +286,12 @@
 >
 	{#snippet invitationCard()}
 		<article class="botanical-card" aria-label="Invitation card preview">
+			{#if cardBackgroundUrl}
+				<div class="card-background" aria-hidden="true">
+					<img src={cardBackgroundUrl} alt="" style="--background-fit: {cardBackgroundFit}; --background-x: {cardBackgroundX}%; --background-y: {cardBackgroundY}%; --background-zoom: {cardBackgroundZoom};" />
+				</div>
+				<div class="card-background-overlay" aria-hidden="true"></div>
+			{/if}
 			<div class="leaf-cluster leaf-cluster-left" aria-hidden="true">❧</div>
 			<div class="leaf-cluster leaf-cluster-right" aria-hidden="true">❧</div>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -323,6 +353,7 @@
 		<div class="woodgrain" aria-hidden="true"></div>
 		<div class="envelope-shell" aria-hidden="true">
 			<img class="envelope-back-art" src="/invite/botanical/envelope-back.svg" alt="" />
+			<div class="envelope-flap-color" style="background-color: {envelopeFlapColor};"></div>
 			{@render invitationCard()}
 			<img class="envelope-front-art" src="/invite/botanical/envelope-front.svg" alt="" />
 			<div class="envelope-paper-grain"></div>
@@ -408,6 +439,19 @@
 		z-index: 1;
 	}
 
+	.envelope-flap-color {
+		position: absolute;
+		inset: 0;
+		clip-path: polygon(0 48.8%, 46.5% 5.8%, 50% 4.8%, 53.5% 5.8%, 100% 48.8%, 93% 50%, 62% 69%, 60% 73.5%, 40% 73.5%, 38% 69%, 7% 50%);
+		background-image:
+			linear-gradient(100deg, rgba(255, 255, 255, 0.18), transparent 35%),
+			url('/invite/botanical/envelope-paper.png');
+		background-blend-mode: soft-light, multiply;
+		background-size: auto, 13rem;
+		box-shadow: inset 0 -0.35rem 0.8rem rgba(0, 0, 0, 0.08);
+		z-index: 2;
+	}
+
 	.envelope-front-art {
 		clip-path: polygon(0 48.8%, 50% 73.5%, 100% 48.8%, 100% 100%, 0 100%);
 		object-fit: contain;
@@ -440,6 +484,27 @@
 		backface-visibility: hidden;
 		font-family: var(--card-font);
 		color: #263229;
+	}
+
+	.card-background,
+	.card-background-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+	}
+
+	.card-background { overflow: hidden; }
+
+	.card-background img {
+		width: 100%;
+		height: 100%;
+		object-fit: var(--background-fit);
+		object-position: var(--background-x) var(--background-y);
+		transform: scale(var(--background-zoom));
+	}
+
+	.card-background-overlay {
+		background: rgba(255, 254, 251, 0.28);
 	}
 
 	.card-preview-stage .botanical-card {
@@ -555,6 +620,7 @@
 		color: color-mix(in srgb, var(--primary) 44%, white);
 		opacity: 0.45;
 		transform: rotate(-25deg);
+		z-index: 1;
 	}
 
 	.leaf-cluster-left { left: -2.2rem; bottom: -0.5rem; }

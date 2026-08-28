@@ -111,7 +111,7 @@ func TestHandleListTemplates_Success(t *testing.T) {
 	body := testutil.ParseJSON(t, rr)
 	data, ok := body["data"].([]any)
 	require.True(t, ok)
-	assert.Len(t, data, 11)
+	assert.Len(t, data, 12)
 }
 
 // --- Get By Event ---

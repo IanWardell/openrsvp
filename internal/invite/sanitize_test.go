@@ -115,6 +115,21 @@ func TestSanitizeCustomData_ClampsLayoutAndPhotoSettings(t *testing.T) {
 	}
 }
 
+func TestSanitizeCustomData_CustomCardNameAndEnvelopeFlapColor(t *testing.T) {
+	in := `{"customCardName":"  Summer Garden Party  ","envelopeFlapColor":"#C47A68","cardBackgroundImage":"/api/v1/uploads/event_background_1.png","cardBackground":{"fit":"cover","x":-5,"y":120,"zoom":3}}`
+	out := sanitizeCustomData(in)
+	for _, want := range []string{`"customCardName":"Summer Garden Party"`, `"envelopeFlapColor":"#C47A68"`, `"cardBackgroundImage":"/api/v1/uploads/event_background_1.png"`, `"x":0`, `"y":100`, `"zoom":2`} {
+		if !contains(out, want) {
+			t.Fatalf("expected sanitized custom data to contain %q, got %q", want, out)
+		}
+	}
+
+	invalid := sanitizeCustomData(`{"customCardName":"   ","envelopeFlapColor":"red; background:url(evil)"}`)
+	if contains(invalid, "customCardName") || contains(invalid, "envelopeFlapColor") {
+		t.Fatalf("expected invalid custom-card fields to be dropped, got %q", invalid)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (len(substr) == 0 || indexOf(s, substr) >= 0)
 }

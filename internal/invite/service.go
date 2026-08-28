@@ -70,6 +70,28 @@ func sanitizeCustomData(raw string) string {
 			data["backgroundImage"] = cleaned
 		}
 	}
+	if bg, ok := data["cardBackgroundImage"].(string); ok {
+		if cleaned := sanitizeBackgroundURL(bg); cleaned == "" {
+			delete(data, "cardBackgroundImage")
+		} else {
+			data["cardBackgroundImage"] = cleaned
+		}
+	}
+	if name, ok := data["customCardName"].(string); ok {
+		name = truncateRunes(strings.TrimSpace(name), 80)
+		if name == "" {
+			delete(data, "customCardName")
+		} else {
+			data["customCardName"] = name
+		}
+	}
+	if color, ok := data["envelopeFlapColor"].(string); ok {
+		if cleaned := sanitizeColor(color); cleaned == "" {
+			delete(data, "envelopeFlapColor")
+		} else {
+			data["envelopeFlapColor"] = cleaned
+		}
+	}
 	if qr, ok := data["qr"].(map[string]any); ok {
 		cleanQR := map[string]any{}
 		if enabled, exists := qr["enabled"].(bool); exists {
@@ -122,6 +144,21 @@ func sanitizeCustomData(raw string) string {
 			cleanPhoto["size"] = clampFloat(value, 18, 50)
 		}
 		data["photo"] = cleanPhoto
+	}
+	if background, ok := data["cardBackground"].(map[string]any); ok {
+		cleanBackground := map[string]any{}
+		if fit, exists := background["fit"].(string); exists && (fit == "cover" || fit == "contain") {
+			cleanBackground["fit"] = fit
+		}
+		for _, key := range []string{"x", "y"} {
+			if value, exists := background[key].(float64); exists {
+				cleanBackground[key] = clampFloat(value, 0, 100)
+			}
+		}
+		if value, exists := background["zoom"].(float64); exists {
+			cleanBackground["zoom"] = clampFloat(value, 1, 2)
+		}
+		data["cardBackground"] = cleanBackground
 	}
 	if areas, ok := data["textAreas"].(map[string]any); ok {
 		cleanAreas := map[string]any{}
@@ -237,6 +274,7 @@ var builtInTemplates = []*Template{
 	{ID: "vintage-retro", Name: "Vintage Retro", Description: "Double border, uppercase heading, and sepia tones for a classic vibe."},
 	{ID: "chalkboard", Name: "Chalkboard", Description: "Dark background with chalk-style text for a cozy, handwritten feel."},
 	{ID: "botanical-save-the-date", Name: "Botanical Save the Date", Description: "An animated envelope reveal with botanical artwork, photo, and QR code."},
+	{ID: "custom-card", Name: "Custom Card", Description: "Upload your own card artwork and save it with a name."},
 }
 
 // Service contains the business logic for invite card management.
@@ -269,6 +307,22 @@ func (s *Service) GetByEventID(ctx context.Context, eventID string) (*InviteCard
 
 // Save creates or updates the invite card for an event.
 func (s *Service) Save(ctx context.Context, eventID string, req SaveInviteRequest) (*InviteCard, error) {
+	card, err := buildInviteCard(eventID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Clean up old event-owned image files if either image slot changed.
+	s.cleanupOldImages(ctx, eventID, card.CustomData)
+
+	if err := s.store.Upsert(ctx, card); err != nil {
+		return nil, err
+	}
+
+	return card, nil
+}
+
+func buildInviteCard(eventID string, req SaveInviteRequest) (*InviteCard, error) {
 	if req.TemplateID == "" {
 		req.TemplateID = "balloon-party"
 	}
@@ -311,19 +365,11 @@ func (s *Service) Save(ctx context.Context, eventID string, req SaveInviteReques
 		card.CustomData = "{}"
 	}
 
-	// Clean up old background image if it changed.
-	s.cleanupOldImage(ctx, eventID, card.CustomData)
-
-	if err := s.store.Upsert(ctx, card); err != nil {
-		return nil, err
-	}
-
 	return card, nil
 }
 
-// cleanupOldImage removes the previous background image file from disk when
-// the customData.backgroundImage value has changed or been removed.
-func (s *Service) cleanupOldImage(ctx context.Context, eventID, newCustomData string) {
+// cleanupOldImages removes replaced event-owned image files from disk.
+func (s *Service) cleanupOldImages(ctx context.Context, eventID, newCustomData string) {
 	if s.uploadsDir == "" {
 		return
 	}
@@ -333,21 +379,24 @@ func (s *Service) cleanupOldImage(ctx context.Context, eventID, newCustomData st
 		return
 	}
 
-	oldURL := extractBackgroundImage(old.CustomData)
-	newURL := extractBackgroundImage(newCustomData)
-
-	if oldURL != "" && oldURL != newURL {
-		// Extract filename from URL path like /api/v1/uploads/filename.jpg
-		parts := strings.Split(oldURL, "/")
-		if len(parts) > 0 {
-			filename := parts[len(parts)-1]
-			_ = os.Remove(filepath.Join(s.uploadsDir, filename))
+	for _, key := range []string{"backgroundImage", "cardBackgroundImage"} {
+		oldURL := extractImageURL(old.CustomData, key)
+		newURL := extractImageURL(newCustomData, key)
+		if oldURL != "" && oldURL != newURL {
+			filename := filepath.Base(oldURL)
+			if strings.HasPrefix(filename, eventID+"_") {
+				_ = os.Remove(filepath.Join(s.uploadsDir, filename))
+			}
 		}
 	}
 }
 
 // extractBackgroundImage pulls the backgroundImage value from a customData JSON string.
 func extractBackgroundImage(customData string) string {
+	return extractImageURL(customData, "backgroundImage")
+}
+
+func extractImageURL(customData, key string) string {
 	if customData == "" || customData == "{}" {
 		return ""
 	}
@@ -355,10 +404,162 @@ func extractBackgroundImage(customData string) string {
 	if err := json.Unmarshal([]byte(customData), &data); err != nil {
 		return ""
 	}
-	if bg, ok := data["backgroundImage"].(string); ok {
+	if bg, ok := data[key].(string); ok {
 		return bg
 	}
 	return ""
+}
+
+// ListCustomTemplates returns the reusable custom cards owned by an organizer.
+func (s *Service) ListCustomTemplates(ctx context.Context, organizerID string) ([]*CustomTemplate, error) {
+	return s.store.ListCustomTemplates(ctx, organizerID)
+}
+
+// SaveCustomTemplate stores or updates a named organizer-owned custom card.
+func (s *Service) SaveCustomTemplate(ctx context.Context, organizerID, eventID string, req SaveCustomTemplateRequest) (*CustomTemplate, error) {
+	name := truncateRunes(strings.TrimSpace(req.Name), 80)
+	if name == "" {
+		return nil, fmt.Errorf("template name is required")
+	}
+	if req.TemplateID != "custom-card" {
+		return nil, fmt.Errorf("only custom cards can be saved as reusable templates")
+	}
+	card, err := buildInviteCard(eventID, req.SaveInviteRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(card.CustomData), &data); err != nil {
+		return nil, fmt.Errorf("decode custom template data: %w", err)
+	}
+	photoData, photoExt, err := s.snapshotEventImage(eventID, data, "backgroundImage")
+	if err != nil {
+		return nil, err
+	}
+	backgroundData, backgroundExt, err := s.snapshotEventImage(eventID, data, "cardBackgroundImage")
+	if err != nil {
+		return nil, err
+	}
+	cleanCustomData, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("encode custom template data: %w", err)
+	}
+
+	tmpl := &CustomTemplate{
+		ID:                 uuid.Must(uuid.NewV7()).String(),
+		OrganizerID:        organizerID,
+		Name:               name,
+		Heading:            card.Heading,
+		Body:               card.Body,
+		Footer:             card.Footer,
+		PrimaryColor:       card.PrimaryColor,
+		SecondaryColor:     card.SecondaryColor,
+		Font:               card.Font,
+		CustomData:         string(cleanCustomData),
+		PhotoData:          photoData,
+		PhotoExt:           photoExt,
+		CardBackgroundData: backgroundData,
+		CardBackgroundExt:  backgroundExt,
+	}
+	if err := s.store.UpsertCustomTemplate(ctx, tmpl); err != nil {
+		return nil, err
+	}
+	return tmpl, nil
+}
+
+func (s *Service) snapshotEventImage(eventID string, data map[string]any, key string) ([]byte, string, error) {
+	raw, ok := data[key].(string)
+	if !ok || raw == "" || !strings.HasPrefix(raw, "/api/v1/uploads/") {
+		return nil, "", nil
+	}
+	filename := filepath.Base(raw)
+	if !strings.HasPrefix(filename, eventID+"_") {
+		return nil, "", fmt.Errorf("custom template image is not owned by this event")
+	}
+	payload, err := os.ReadFile(filepath.Join(s.uploadsDir, filename))
+	if err != nil {
+		return nil, "", fmt.Errorf("read custom template image: %w", err)
+	}
+	_, ext := detectImageType(payload)
+	if ext == "" {
+		return nil, "", fmt.Errorf("custom template image has an invalid type")
+	}
+	delete(data, key)
+	return payload, ext, nil
+}
+
+// ApplyCustomTemplate copies a reusable template and its images onto an event.
+func (s *Service) ApplyCustomTemplate(ctx context.Context, organizerID, eventID, templateID string) (*InviteCard, error) {
+	tmpl, err := s.store.FindCustomTemplateByID(ctx, organizerID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	if tmpl == nil {
+		return nil, fmt.Errorf("custom template not found")
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(tmpl.CustomData), &data); err != nil {
+		return nil, fmt.Errorf("decode custom template data: %w", err)
+	}
+	var created []string
+	writeImage := func(key, slot string, payload []byte, ext string) error {
+		if len(payload) == 0 || ext == "" {
+			return nil
+		}
+		filename := fmt.Sprintf("%s_%s_%s%s", eventID, slot, uuid.Must(uuid.NewV7()).String(), ext)
+		if err := os.WriteFile(filepath.Join(s.uploadsDir, filename), payload, 0644); err != nil {
+			return fmt.Errorf("write applied custom template image: %w", err)
+		}
+		created = append(created, filename)
+		data[key] = "/api/v1/uploads/" + filename
+		return nil
+	}
+	if err := writeImage("backgroundImage", "photo", tmpl.PhotoData, tmpl.PhotoExt); err != nil {
+		return nil, err
+	}
+	if err := writeImage("cardBackgroundImage", "background", tmpl.CardBackgroundData, tmpl.CardBackgroundExt); err != nil {
+		for _, filename := range created {
+			_ = os.Remove(filepath.Join(s.uploadsDir, filename))
+		}
+		return nil, err
+	}
+	data["customCardName"] = tmpl.Name
+	customData, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("encode applied custom template data: %w", err)
+	}
+
+	card, err := s.Save(ctx, eventID, SaveInviteRequest{
+		TemplateID:     "custom-card",
+		Heading:        tmpl.Heading,
+		Body:           tmpl.Body,
+		Footer:         tmpl.Footer,
+		PrimaryColor:   tmpl.PrimaryColor,
+		SecondaryColor: tmpl.SecondaryColor,
+		Font:           tmpl.Font,
+		CustomData:     string(customData),
+	})
+	if err != nil {
+		for _, filename := range created {
+			_ = os.Remove(filepath.Join(s.uploadsDir, filename))
+		}
+		return nil, err
+	}
+	return card, nil
+}
+
+// DeleteCustomTemplate removes an organizer-owned reusable template.
+func (s *Service) DeleteCustomTemplate(ctx context.Context, organizerID, templateID string) error {
+	deleted, err := s.store.DeleteCustomTemplate(ctx, organizerID, templateID)
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return fmt.Errorf("custom template not found")
+	}
+	return nil
 }
 
 // GetPreview retrieves the invite card for an event, returning a default card

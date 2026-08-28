@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { toast } from '$lib/stores/toast';
-	import type { InviteCard, Event } from '$lib/types';
+	import type { InviteCard, Event, CustomInviteTemplate } from '$lib/types';
 	import AppShell from '$lib/components/layout/AppShell.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
@@ -47,6 +47,11 @@
 	let qrLayoutX = $state(79);
 	let qrLayoutY = $state(70);
 	let qrSize = $state(17);
+	let customCardName = $state('My Custom Card');
+	let envelopeFlapColor = $state('#aebda9');
+	let customTemplates = $state<CustomInviteTemplate[]>([]);
+	let savingTemplate = $state(false);
+	let applyingTemplateId = $state('');
 
 	type TextAreaKey = 'eyebrowLeft' | 'eyebrowRight' | 'heading' | 'body' | 'eventDate' | 'eventLocation' | 'footer';
 	type EditorElementKey = TextAreaKey | 'photo' | 'qr';
@@ -84,6 +89,12 @@
 	// Background image
 	let backgroundImageUrl = $state('');
 	let uploading = $state(false);
+	let cardBackgroundImageUrl = $state('');
+	let cardBackgroundUploading = $state(false);
+	let cardBackgroundFit = $state('cover');
+	let cardBackgroundPositionX = $state(50);
+	let cardBackgroundPositionY = $state(50);
+	let cardBackgroundZoom = $state(1);
 
 	const templates = [
 		{
@@ -151,6 +162,12 @@
 			name: 'Botanical Save the Date',
 			description: 'Animated envelope, photo, and QR code',
 			emoji: '\u{1F33F}'
+		},
+		{
+			id: 'custom-card',
+			name: 'Custom Card',
+			description: 'Upload your own card artwork',
+			emoji: '\u{1F5BC}'
 		}
 	];
 
@@ -165,9 +182,17 @@
 		{ value: 'cover', label: 'Fill circle (crop)' },
 		{ value: 'contain', label: 'Show full image' }
 	];
-	const selectedTemplateDetails = $derived(
-		templates.find((template) => template.id === selectedTemplate) || templates[0]
-	);
+	const backgroundFitOptions = [
+		{ value: 'cover', label: 'Fill card (crop)' },
+		{ value: 'contain', label: 'Show full image' }
+	];
+	const isAdvancedTemplate = $derived(selectedTemplate === 'botanical-save-the-date' || selectedTemplate === 'custom-card');
+	const selectedTemplateDetails = $derived.by(() => {
+		const template = templates.find((item) => item.id === selectedTemplate) || templates[0];
+		return selectedTemplate === 'custom-card' && customCardName.trim()
+			? { ...template, name: customCardName.trim() }
+			: template;
+	});
 	const activeTextArea = $derived(
 		textAreaFields.some((area) => area.key === activeElement) ? activeElement as TextAreaKey : null
 	);
@@ -175,17 +200,32 @@
 		textAreaFields.find((area) => area.key === activeTextArea) || textAreaFields[0]
 	);
 
-	const previewHeading = $derived(selectedTemplate === 'botanical-save-the-date' ? textAreas.heading.text : heading);
-	const previewBody = $derived(selectedTemplate === 'botanical-save-the-date' ? textAreas.body.text : body);
-	const previewFooter = $derived(selectedTemplate === 'botanical-save-the-date' ? textAreas.footer.text : footer);
+	const previewHeading = $derived(isAdvancedTemplate ? textAreas.heading.text : heading);
+	const previewBody = $derived(isAdvancedTemplate ? textAreas.body.text : body);
+	const previewFooter = $derived(isAdvancedTemplate ? textAreas.footer.text : footer);
 	const customTextAreas = $derived(Object.fromEntries(
 		textAreaFields.map(({ key }) => [key, textAreas[key]])
 	));
 
 	const customDataJSON = $derived(JSON.stringify({
 		...(backgroundImageUrl ? { backgroundImage: backgroundImageUrl } : {}),
-		...(selectedTemplate === 'botanical-save-the-date'
+		...(selectedTemplate === 'custom-card' && cardBackgroundImageUrl
 			? {
+					cardBackgroundImage: cardBackgroundImageUrl,
+					cardBackground: {
+						fit: cardBackgroundFit,
+						x: cardBackgroundPositionX,
+						y: cardBackgroundPositionY,
+						zoom: cardBackgroundZoom
+					}
+				}
+			: {}),
+		...(selectedTemplate === 'custom-card' && customCardName.trim()
+			? { customCardName: customCardName.trim() }
+			: {}),
+		...(isAdvancedTemplate
+			? {
+					envelopeFlapColor,
 					textAreas: customTextAreas,
 					photo: {
 						fit: photoFit,
@@ -210,75 +250,76 @@
 			: {})
 	}));
 
+	function loadInviteDesign(invite: InviteCard, eventData: Event | null = event) {
+		selectedTemplate = invite.templateId || 'balloon-party';
+		heading = invite.heading || heading;
+		body = invite.body || body;
+		footer = invite.footer || footer;
+		primaryColor = invite.primaryColor || primaryColor;
+		secondaryColor = invite.secondaryColor || secondaryColor;
+		font = invite.font || font;
+		templatePickerOpen = false;
+		textAreas.heading.text = invite.heading || textAreas.heading.text;
+		textAreas.body.text = invite.body || textAreas.body.text;
+		textAreas.footer.text = invite.footer || textAreas.footer.text;
+		textAreas.eventDate.text = eventData?.eventDate ? formatDateForEditor(eventData.eventDate) : '';
+		textAreas.eventLocation.text = eventData?.location || '';
+		const cd = typeof invite.customData === 'string' ? JSON.parse(invite.customData || '{}') : invite.customData || {};
+		backgroundImageUrl = typeof cd.backgroundImage === 'string' ? cd.backgroundImage : '';
+		cardBackgroundImageUrl = typeof cd.cardBackgroundImage === 'string' ? cd.cardBackgroundImage : '';
+		if (typeof cd.customCardName === 'string' && cd.customCardName.trim()) customCardName = cd.customCardName.trim();
+		if (typeof cd.envelopeFlapColor === 'string') envelopeFlapColor = cd.envelopeFlapColor;
+		if (cd.cardBackground && typeof cd.cardBackground === 'object') {
+			cardBackgroundFit = cd.cardBackground.fit === 'contain' ? 'contain' : 'cover';
+			cardBackgroundPositionX = typeof cd.cardBackground.x === 'number' ? cd.cardBackground.x : 50;
+			cardBackgroundPositionY = typeof cd.cardBackground.y === 'number' ? cd.cardBackground.y : 50;
+			cardBackgroundZoom = typeof cd.cardBackground.zoom === 'number' ? cd.cardBackground.zoom : 1;
+		}
+		if (cd.qr && typeof cd.qr === 'object') {
+			qrEnabled = cd.qr.enabled !== false;
+			qrUrl = typeof cd.qr.url === 'string' ? cd.qr.url : '';
+			qrCaption = typeof cd.qr.caption === 'string' ? cd.qr.caption : qrCaption;
+			qrForeground = typeof cd.qr.foreground === 'string' ? cd.qr.foreground : qrForeground;
+			qrBackground = typeof cd.qr.background === 'string' ? cd.qr.background : qrBackground;
+			qrLayoutX = typeof cd.qr.x === 'number' ? cd.qr.x : qrLayoutX;
+			qrLayoutY = typeof cd.qr.y === 'number' ? cd.qr.y : qrLayoutY;
+			qrSize = typeof cd.qr.size === 'number' ? cd.qr.size : qrSize;
+		}
+		if (cd.photo && typeof cd.photo === 'object') {
+			photoFit = cd.photo.fit === 'contain' ? 'contain' : photoFit;
+			photoPositionX = typeof cd.photo.x === 'number' ? cd.photo.x : photoPositionX;
+			photoPositionY = typeof cd.photo.y === 'number' ? cd.photo.y : photoPositionY;
+			photoZoom = typeof cd.photo.zoom === 'number' ? cd.photo.zoom : photoZoom;
+			photoLayoutX = typeof cd.photo.layoutX === 'number' ? cd.photo.layoutX : photoLayoutX;
+			photoLayoutY = typeof cd.photo.layoutY === 'number' ? cd.photo.layoutY : photoLayoutY;
+			photoSize = typeof cd.photo.size === 'number' ? cd.photo.size : photoSize;
+		}
+		if (cd.textAreas && typeof cd.textAreas === 'object') {
+			for (const field of textAreaFields) {
+				const savedArea = cd.textAreas[field.key];
+				if (!savedArea || typeof savedArea !== 'object') continue;
+				const target = textAreas[field.key];
+				if (typeof savedArea.text === 'string') target.text = savedArea.text;
+				if (typeof savedArea.x === 'number') target.x = savedArea.x;
+				if (typeof savedArea.y === 'number') target.y = savedArea.y;
+				if (typeof savedArea.width === 'number') target.width = savedArea.width;
+				if (typeof savedArea.fontSize === 'number') target.fontSize = savedArea.fontSize;
+				if (typeof savedArea.fontFamily === 'string') target.fontFamily = savedArea.fontFamily;
+				if (savedArea.align === 'left' || savedArea.align === 'center' || savedArea.align === 'right') target.align = savedArea.align;
+			}
+		}
+	}
+
 	onMount(async () => {
 		try {
-			const [eventResult, inviteResult] = await Promise.all([
+			const [eventResult, inviteResult, templatesResult] = await Promise.all([
 				api.get<{ data: Event }>(`/events/${eventId}`),
-				api.get<{ data: InviteCard }>(`/invite/event/${eventId}`).catch(() => null)
+				api.get<{ data: InviteCard }>(`/invite/event/${eventId}`).catch(() => null),
+				api.get<{ data: CustomInviteTemplate[] }>('/invite/custom-templates')
 			]);
 			event = eventResult.data;
-
-			if (inviteResult) {
-				const invite = inviteResult.data;
-				selectedTemplate = invite.templateId || 'balloon-party';
-				heading = invite.heading || heading;
-				body = invite.body || body;
-				footer = invite.footer || footer;
-				primaryColor = invite.primaryColor || primaryColor;
-				secondaryColor = invite.secondaryColor || secondaryColor;
-				font = invite.font || font;
-				templatePickerOpen = false;
-				textAreas.heading.text = invite.heading || textAreas.heading.text;
-				textAreas.body.text = invite.body || textAreas.body.text;
-				textAreas.footer.text = invite.footer || textAreas.footer.text;
-				textAreas.eventDate.text = eventResult.data.eventDate ? formatDateForEditor(eventResult.data.eventDate) : '';
-				textAreas.eventLocation.text = eventResult.data.location || '';
-
-				// Load existing background image from customData
-				try {
-					const cd = typeof invite.customData === 'string'
-						? JSON.parse(invite.customData || '{}')
-						: invite.customData || {};
-					if (cd.backgroundImage) {
-						backgroundImageUrl = cd.backgroundImage;
-					}
-					if (cd.qr && typeof cd.qr === 'object') {
-						qrEnabled = cd.qr.enabled !== false;
-						qrUrl = typeof cd.qr.url === 'string' ? cd.qr.url : '';
-						qrCaption = typeof cd.qr.caption === 'string' ? cd.qr.caption : qrCaption;
-						qrForeground = typeof cd.qr.foreground === 'string' ? cd.qr.foreground : qrForeground;
-						qrBackground = typeof cd.qr.background === 'string' ? cd.qr.background : qrBackground;
-						qrLayoutX = typeof cd.qr.x === 'number' ? cd.qr.x : qrLayoutX;
-						qrLayoutY = typeof cd.qr.y === 'number' ? cd.qr.y : qrLayoutY;
-						qrSize = typeof cd.qr.size === 'number' ? cd.qr.size : qrSize;
-					}
-					if (cd.photo && typeof cd.photo === 'object') {
-						photoFit = cd.photo.fit === 'contain' ? 'contain' : photoFit;
-						photoPositionX = typeof cd.photo.x === 'number' ? cd.photo.x : photoPositionX;
-						photoPositionY = typeof cd.photo.y === 'number' ? cd.photo.y : photoPositionY;
-						photoZoom = typeof cd.photo.zoom === 'number' ? cd.photo.zoom : photoZoom;
-						photoLayoutX = typeof cd.photo.layoutX === 'number' ? cd.photo.layoutX : photoLayoutX;
-						photoLayoutY = typeof cd.photo.layoutY === 'number' ? cd.photo.layoutY : photoLayoutY;
-						photoSize = typeof cd.photo.size === 'number' ? cd.photo.size : photoSize;
-					}
-					if (cd.textAreas && typeof cd.textAreas === 'object') {
-						for (const field of textAreaFields) {
-							const savedArea = cd.textAreas[field.key];
-							if (!savedArea || typeof savedArea !== 'object') continue;
-							const target = textAreas[field.key];
-							if (typeof savedArea.text === 'string') target.text = savedArea.text;
-							if (typeof savedArea.x === 'number') target.x = savedArea.x;
-							if (typeof savedArea.y === 'number') target.y = savedArea.y;
-							if (typeof savedArea.width === 'number') target.width = savedArea.width;
-							if (typeof savedArea.fontSize === 'number') target.fontSize = savedArea.fontSize;
-							if (typeof savedArea.fontFamily === 'string') target.fontFamily = savedArea.fontFamily;
-							if (savedArea.align === 'left' || savedArea.align === 'center' || savedArea.align === 'right') target.align = savedArea.align;
-						}
-					}
-				} catch {
-					// ignore parse errors
-				}
-			}
+			customTemplates = templatesResult.data || [];
+			if (inviteResult) loadInviteDesign(inviteResult.data, eventResult.data);
 		} catch (err: unknown) {
 			const apiErr = err as { message?: string };
 			toast.error(apiErr.message || 'Failed to load invite data');
@@ -288,6 +329,14 @@
 	});
 
 	async function handleSave() {
+		if (selectedTemplate === 'custom-card' && !customCardName.trim()) {
+			toast.error('Enter a name for your custom card');
+			return;
+		}
+		if (selectedTemplate === 'custom-card' && !cardBackgroundImageUrl) {
+			toast.error('Upload a background image for your custom card');
+			return;
+		}
 		saving = true;
 		try {
 			await api.put(`/invite/event/${eventId}`, {
@@ -301,7 +350,9 @@
 				customData: customDataJSON
 			});
 			saved = true;
-			toast.success('Invite design saved!');
+			toast.success(selectedTemplate === 'custom-card'
+				? `${customCardName.trim()} saved as your custom card!`
+				: 'Invite design saved!');
 		} catch (err: unknown) {
 			const apiErr = err as { message?: string };
 			toast.error(apiErr.message || 'Failed to save invite design');
@@ -319,13 +370,14 @@
 	}
 
 	function selectTemplate(templateId: string) {
-		if (templateId === 'botanical-save-the-date') {
+		const nextIsAdvanced = templateId === 'botanical-save-the-date' || templateId === 'custom-card';
+		if (nextIsAdvanced) {
 			textAreas.heading.text = heading || textAreas.heading.text;
 			textAreas.body.text = body || textAreas.body.text;
 			textAreas.footer.text = footer || textAreas.footer.text;
 			textAreas.eventDate.text ||= event?.eventDate ? formatDateForEditor(event.eventDate) : '';
 			textAreas.eventLocation.text ||= event?.location || '';
-		} else if (selectedTemplate === 'botanical-save-the-date') {
+		} else if (isAdvancedTemplate) {
 			heading = textAreas.heading.text;
 			body = textAreas.body.text;
 			footer = textAreas.footer.text;
@@ -351,25 +403,85 @@
 		}
 	}
 
-	async function handleImageUpload(e: globalThis.Event & { currentTarget: HTMLInputElement }) {
-		const file = (e.currentTarget as HTMLInputElement).files?.[0];
-		if (!file) return;
-
-		if (file.size > 2 * 1024 * 1024) {
-			toast.error('Image must be under 2MB');
-			return;
-		}
-
-		uploading = true;
+	async function uploadImage(file: File, slot: 'photo' | 'background') {
+		const setUploading = slot === 'background'
+			? (value: boolean) => (cardBackgroundUploading = value)
+			: (value: boolean) => (uploading = value);
+		setUploading(true);
 		try {
-			const result = await api.upload<{ data: { url: string } }>(`/invite/event/${eventId}/image`, file);
-			backgroundImageUrl = result.data.url;
-			toast.success('Background image uploaded!');
+			const result = await api.upload<{ data: { url: string } }>(`/invite/event/${eventId}/image?slot=${slot}`, file);
+			if (slot === 'background') cardBackgroundImageUrl = result.data.url;
+			else backgroundImageUrl = result.data.url;
+			toast.success(slot === 'background' ? 'Card background uploaded!' : 'Photo uploaded!');
 		} catch (err: unknown) {
 			const apiErr = err as { message?: string };
 			toast.error(apiErr.message || 'Failed to upload image');
 		} finally {
-			uploading = false;
+			setUploading(false);
+		}
+	}
+
+	async function handleImageUpload(e: globalThis.Event & { currentTarget: HTMLInputElement }) {
+		const file = (e.currentTarget as HTMLInputElement).files?.[0];
+		if (!file) return;
+		if (file.size > 2 * 1024 * 1024) {
+			toast.error('Image must be under 2MB');
+			return;
+		}
+		await uploadImage(file, 'photo');
+	}
+
+	async function handleCardBackgroundUpload(e: globalThis.Event & { currentTarget: HTMLInputElement }) {
+		const file = e.currentTarget.files?.[0];
+		if (!file) return;
+		if (file.size > 2 * 1024 * 1024) {
+			toast.error('Image must be under 2MB');
+			return;
+		}
+		await uploadImage(file, 'background');
+	}
+
+	async function handleSaveAsTemplate() {
+		if (!customCardName.trim() || !cardBackgroundImageUrl) {
+			toast.error('Enter a name and upload a card background first');
+			return;
+		}
+		savingTemplate = true;
+		try {
+			const result = await api.post<{ data: CustomInviteTemplate }>(`/invite/event/${eventId}/custom-template`, {
+				name: customCardName.trim(), templateId: 'custom-card', heading: previewHeading, body: previewBody,
+				footer: previewFooter, primaryColor, secondaryColor, font, customData: customDataJSON
+			});
+			customTemplates = [...customTemplates.filter((item) => item.id !== result.data.id && item.name !== result.data.name), result.data]
+				.sort((a, b) => a.name.localeCompare(b.name));
+			toast.success(`${result.data.name} saved to your templates!`);
+		} catch (err: unknown) {
+			toast.error((err as { message?: string }).message || 'Failed to save custom template');
+		} finally {
+			savingTemplate = false;
+		}
+	}
+
+	async function applyCustomTemplate(templateId: string) {
+		applyingTemplateId = templateId;
+		try {
+			const result = await api.post<{ data: InviteCard }>(`/invite/event/${eventId}/custom-template/${templateId}/apply`);
+			loadInviteDesign(result.data);
+			toast.success('Custom template applied and saved!');
+		} catch (err: unknown) {
+			toast.error((err as { message?: string }).message || 'Failed to apply custom template');
+		} finally {
+			applyingTemplateId = '';
+		}
+	}
+
+	async function deleteCustomTemplate(templateId: string) {
+		try {
+			await api.delete(`/invite/custom-templates/${templateId}`);
+			customTemplates = customTemplates.filter((item) => item.id !== templateId);
+			toast.success('Custom template deleted');
+		} catch (err: unknown) {
+			toast.error((err as { message?: string }).message || 'Failed to delete custom template');
 		}
 	}
 
@@ -401,6 +513,10 @@
 		backgroundImageUrl = '';
 	}
 
+	function removeCardBackgroundImage() {
+		cardBackgroundImageUrl = '';
+	}
+
 	function handleDrop(e: DragEvent) {
 		e.preventDefault();
 		const file = e.dataTransfer?.files?.[0];
@@ -413,6 +529,13 @@
 			input.files = dt.files;
 			input.dispatchEvent(new window.Event('change', { bubbles: true }));
 		}
+	}
+
+	function handleCardBackgroundDrop(e: DragEvent) {
+		e.preventDefault();
+		const file = e.dataTransfer?.files?.[0];
+		if (!file || !file.type.startsWith('image/')) return;
+		void uploadImage(file, 'background');
 	}
 </script>
 
@@ -482,6 +605,22 @@
 								</button>
 							{/each}
 						</div>
+						{#if customTemplates.length > 0}
+							<div class="mt-5 border-t border-neutral-200 pt-4">
+								<p class="mb-3 text-sm font-semibold text-neutral-900">Your saved custom templates</p>
+								<div class="space-y-2">
+									{#each customTemplates as template}
+										<div class="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+											<div class="min-w-0"><p class="truncate text-sm font-medium text-neutral-900">{template.name}</p><p class="text-xs text-neutral-500">Reusable custom card</p></div>
+											<div class="flex gap-2">
+												<Button size="sm" variant="outline" loading={applyingTemplateId === template.id} onclick={() => applyCustomTemplate(template.id)}>Use</Button>
+												<button type="button" class="rounded px-2 text-xs font-medium text-error hover:bg-error/10" aria-label={`Delete ${template.name}`} onclick={() => deleteCustomTemplate(template.id)}>Delete</button>
+											</div>
+										</div>
+									{/each}
+								</div>
+							</div>
+						{/if}
 					{:else}
 						<div class="flex items-center gap-3 rounded-lg bg-neutral-50 px-4 py-3">
 							<span class="text-2xl" aria-hidden="true">{selectedTemplateDetails.emoji}</span>
@@ -500,7 +639,30 @@
 					{/snippet}
 
 					<div class="space-y-4">
-						{#if selectedTemplate === 'botanical-save-the-date'}
+						{#if selectedTemplate === 'custom-card'}
+							<div class="rounded-lg border border-primary-light bg-primary-lighter p-4 space-y-2">
+								<Input label="Custom card name" name="customCardName" bind:value={customCardName} maxlength={80} placeholder="My Custom Card" />
+								<p class="text-xs text-neutral-600">This name identifies the custom design saved for this event.</p>
+							</div>
+							<div class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 space-y-3">
+								<div><p class="text-sm font-semibold text-neutral-900">Card background artwork</p><p class="text-xs text-neutral-500">Upload the artwork that fills the card. JPEG, PNG, or WebP, up to 2MB.</p></div>
+								{#if cardBackgroundImageUrl}
+									<div class="relative overflow-hidden rounded-lg border border-neutral-200"><img src={cardBackgroundImageUrl} alt="Card background preview" class="h-32 w-full object-cover" /><button type="button" onclick={removeCardBackgroundImage} class="absolute right-1 top-1 rounded-full bg-surface/90 p-1 text-neutral-500 shadow-sm hover:text-error" aria-label="Remove card background"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M6 18 18 6M6 6l12 12" /></svg></button></div>
+								{:else}
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<div class="cursor-pointer rounded-lg border-2 border-dashed border-neutral-300 p-4 text-center hover:border-primary-light" ondragover={(e) => e.preventDefault()} ondrop={handleCardBackgroundDrop}>
+										<input id="card-background-input" type="file" accept="image/jpeg,image/png,image/webp" class="hidden" onchange={handleCardBackgroundUpload} />
+										<label for="card-background-input" class="cursor-pointer text-xs text-neutral-500">{cardBackgroundUploading ? 'Uploading...' : 'Drop artwork here or click to upload'}</label>
+									</div>
+								{/if}
+								{#if cardBackgroundImageUrl}
+									<Select label="Background fit" name="cardBackgroundFit" bind:value={cardBackgroundFit} options={backgroundFitOptions} />
+									<div class="grid grid-cols-2 gap-3"><div class="space-y-1"><label for="cardBackgroundX" class="text-xs text-neutral-600">Focal X: {Math.round(cardBackgroundPositionX)}%</label><input id="cardBackgroundX" type="range" min="0" max="100" bind:value={cardBackgroundPositionX} class="w-full accent-primary" /></div><div class="space-y-1"><label for="cardBackgroundY" class="text-xs text-neutral-600">Focal Y: {Math.round(cardBackgroundPositionY)}%</label><input id="cardBackgroundY" type="range" min="0" max="100" bind:value={cardBackgroundPositionY} class="w-full accent-primary" /></div></div>
+									<div class="space-y-1"><label for="cardBackgroundZoom" class="text-xs text-neutral-600">Zoom: {Number(cardBackgroundZoom).toFixed(2)}x</label><input id="cardBackgroundZoom" type="range" min="1" max="2" step="0.05" bind:value={cardBackgroundZoom} class="w-full accent-primary" /></div>
+								{/if}
+							</div>
+						{/if}
+						{#if isAdvancedTemplate}
 							<div class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 space-y-4">
 								<div>
 									<p class="text-sm font-semibold text-neutral-900">Selected element</p>
@@ -637,7 +799,14 @@
 
 						<Select label="Font" name="font" bind:value={font} options={fontOptions} />
 
-						{#if selectedTemplate === 'botanical-save-the-date' && activeElement === 'qr'}
+						{#if isAdvancedTemplate}
+							<div class="space-y-1">
+								<label for="envelopeFlapColor" class="block text-sm font-medium text-neutral-700">Envelope flap color</label>
+								<input id="envelopeFlapColor" type="color" bind:value={envelopeFlapColor} class="h-10 w-full rounded-lg border border-neutral-300 cursor-pointer" />
+							</div>
+						{/if}
+
+						{#if isAdvancedTemplate && activeElement === 'qr'}
 							<div class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 space-y-3">
 								<div class="flex items-center justify-between gap-3">
 									<div>
@@ -665,12 +834,12 @@
 						{/if}
 
 						<!-- Background Image Upload -->
-						{#if selectedTemplate !== 'botanical-save-the-date' || activeElement === 'photo'}
+						{#if !isAdvancedTemplate || activeElement === 'photo'}
 						<div class="space-y-2">
 							<label for="bg-image-input" class="block text-sm font-medium text-neutral-700">
-								{selectedTemplate === 'botanical-save-the-date' ? 'Feature photo' : 'Background Image'}
+								{isAdvancedTemplate ? 'Feature photo' : 'Background Image'}
 							</label>
-							{#if selectedTemplate === 'botanical-save-the-date'}
+							{#if isAdvancedTemplate}
 								<p class="text-xs text-neutral-500">Shown as the circular artwork on the invitation card.</p>
 							{/if}
 							{#if backgroundImageUrl}
@@ -720,7 +889,7 @@
 						</div>
 						{/if}
 
-						{#if selectedTemplate === 'botanical-save-the-date' && activeElement === 'photo' && backgroundImageUrl}
+						{#if isAdvancedTemplate && activeElement === 'photo' && backgroundImageUrl}
 							<div class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 space-y-3">
 								<div>
 									<p class="text-sm font-medium text-neutral-700">Circular photo crop</p>
@@ -746,7 +915,12 @@
 					</div>
 				</Card>
 
-				<Button onclick={handleSave} loading={saving} class="w-full">Save Invite Design</Button>
+				<Button onclick={handleSave} loading={saving} class="w-full">
+					{selectedTemplate === 'custom-card' ? 'Save Custom Card' : 'Save Invite Design'}
+				</Button>
+				{#if selectedTemplate === 'custom-card'}
+					<Button onclick={handleSaveAsTemplate} loading={savingTemplate} variant="outline" class="w-full">Save as Reusable Template</Button>
+				{/if}
 
 				{#if saved}
 					<Card class="mt-4">
@@ -790,7 +964,7 @@
 						customData={customDataJSON}
 						qrTargetUrl={$page.url.origin + '/i/' + (event?.shareToken || '')}
 						timezone={event?.timezone}
-						editable={selectedTemplate === 'botanical-save-the-date'}
+						editable={isAdvancedTemplate}
 						selectedElement={activeElement}
 						onselectelement={selectEditorElement}
 						onmoveelement={moveEditorElement}

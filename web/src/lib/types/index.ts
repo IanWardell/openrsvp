@@ -108,6 +108,20 @@ export interface InviteCard {
 	updatedAt: string;
 }
 
+export interface CustomInviteTemplate {
+	id: string;
+	name: string;
+	heading: string;
+	body: string;
+	footer: string;
+	primaryColor: string;
+	secondaryColor: string;
+	font: string;
+	customData: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
 export interface Attendee {
 	id: string;
 	eventId: string;

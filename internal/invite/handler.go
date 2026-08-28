@@ -60,6 +60,10 @@ func (h *Handler) Routes() chi.Router {
 		auth.Put("/event/{eventId}", h.handleSave)
 		auth.Get("/event/{eventId}/preview", h.handlePreview)
 		auth.Post("/event/{eventId}/image", h.handleUploadImage)
+		auth.Get("/custom-templates", h.handleListCustomTemplates)
+		auth.Post("/event/{eventId}/custom-template", h.handleSaveCustomTemplate)
+		auth.Post("/event/{eventId}/custom-template/{templateId}/apply", h.handleApplyCustomTemplate)
+		auth.Delete("/custom-templates/{templateId}", h.handleDeleteCustomTemplate)
 	})
 
 	return r
@@ -200,11 +204,20 @@ func (h *Handler) handleUploadImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove any existing image for this event.
-	h.cleanupEventImages(eventID)
+	slot := r.URL.Query().Get("slot")
+	if slot == "" {
+		slot = "photo"
+	}
+	if slot != "photo" && slot != "background" {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid image slot")
+		return
+	}
+
+	// Remove any existing image in this event's selected slot.
+	h.cleanupEventImages(eventID, slot)
 
 	// Write new file.
-	filename := fmt.Sprintf("%s_%d%s", eventID, time.Now().Unix(), ext)
+	filename := fmt.Sprintf("%s_%s_%d%s", eventID, slot, time.Now().UnixNano(), ext)
 	filePath := filepath.Join(h.uploadsDir, filename)
 
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
@@ -216,8 +229,8 @@ func (h *Handler) handleUploadImage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"url": url}})
 }
 
-// cleanupEventImages removes all existing uploaded images for the given event ID.
-func (h *Handler) cleanupEventImages(eventID string) {
+// cleanupEventImages removes existing uploads for one event image slot.
+func (h *Handler) cleanupEventImages(eventID, slot string) {
 	if h.uploadsDir == "" {
 		return
 	}
@@ -225,12 +238,102 @@ func (h *Handler) cleanupEventImages(eventID string) {
 	if err != nil {
 		return
 	}
-	prefix := eventID + "_"
+	prefix := eventID + "_" + slot + "_"
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
 			_ = os.Remove(filepath.Join(h.uploadsDir, entry.Name()))
 		}
 	}
+}
+
+func (h *Handler) handleListCustomTemplates(w http.ResponseWriter, r *http.Request) {
+	organizerID, ok := h.organizerFrom(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	templates, err := h.service.ListCustomTemplates(r.Context(), organizerID)
+	if err != nil {
+		ref := errcode.Ref()
+		h.logger.Error().Err(err).Str("error_code", ref).Str("organizer_id", organizerID).Msg("failed to list custom invite templates")
+		writeError(w, http.StatusInternalServerError, "internal_error", "an internal error occurred (ref: "+ref+")")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": templates})
+}
+
+func (h *Handler) handleSaveCustomTemplate(w http.ResponseWriter, r *http.Request) {
+	organizerID, ok := h.organizerFrom(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	eventID := chi.URLParam(r, "eventId")
+	if err := h.checkEventOwner(r.Context(), eventID, organizerID); err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	var req SaveCustomTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	tmpl, err := h.service.SaveCustomTemplate(r.Context(), organizerID, eventID, req)
+	if err != nil {
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "only custom cards") || strings.HasPrefix(err.Error(), "invalid templateId:") || strings.Contains(err.Error(), "not owned by this event") || strings.Contains(err.Error(), "invalid type") {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		ref := errcode.Ref()
+		h.logger.Error().Err(err).Str("error_code", ref).Str("event_id", eventID).Msg("failed to save custom invite template")
+		writeError(w, http.StatusInternalServerError, "internal_error", "an internal error occurred (ref: "+ref+")")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": tmpl})
+}
+
+func (h *Handler) handleApplyCustomTemplate(w http.ResponseWriter, r *http.Request) {
+	organizerID, ok := h.organizerFrom(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	eventID := chi.URLParam(r, "eventId")
+	if err := h.checkEventOwner(r.Context(), eventID, organizerID); err != nil {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	card, err := h.service.ApplyCustomTemplate(r.Context(), organizerID, eventID, chi.URLParam(r, "templateId"))
+	if err != nil {
+		if err.Error() == "custom template not found" {
+			writeError(w, http.StatusNotFound, "not_found", err.Error())
+			return
+		}
+		ref := errcode.Ref()
+		h.logger.Error().Err(err).Str("error_code", ref).Str("event_id", eventID).Msg("failed to apply custom invite template")
+		writeError(w, http.StatusInternalServerError, "internal_error", "an internal error occurred (ref: "+ref+")")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": card})
+}
+
+func (h *Handler) handleDeleteCustomTemplate(w http.ResponseWriter, r *http.Request) {
+	organizerID, ok := h.organizerFrom(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+	if err := h.service.DeleteCustomTemplate(r.Context(), organizerID, chi.URLParam(r, "templateId")); err != nil {
+		if err.Error() == "custom template not found" {
+			writeError(w, http.StatusNotFound, "not_found", err.Error())
+			return
+		}
+		ref := errcode.Ref()
+		h.logger.Error().Err(err).Str("error_code", ref).Str("organizer_id", organizerID).Msg("failed to delete custom invite template")
+		writeError(w, http.StatusInternalServerError, "internal_error", "an internal error occurred (ref: "+ref+")")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // writeJSON writes a JSON response with the given status code.

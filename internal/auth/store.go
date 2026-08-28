@@ -381,6 +381,12 @@ func (s *Store) ExportOrganizerData(ctx context.Context, organizerID string) (*E
 	if err != nil {
 		return nil, fmt.Errorf("export series: %w", err)
 	}
+	doc.CustomInviteTemplates, err = queryRowsByOrganizer(ctx, s.db,
+		`SELECT id, organizer_id, name, heading, body, footer, primary_color, secondary_color, font, custom_data, created_at, updated_at
+		 FROM custom_invite_templates WHERE organizer_id = ? ORDER BY created_at`, organizerID)
+	if err != nil {
+		return nil, fmt.Errorf("export custom invite templates: %w", err)
+	}
 
 	if len(eventIDs) > 0 {
 		in, args := inClause(eventIDs)
@@ -459,6 +465,7 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 		// SET NULL, and the events are already gone above).
 		{"DELETE FROM event_series WHERE organizer_id = ?", []any{organizerID}},
 		// auth records tied directly to the organizer
+		{"DELETE FROM custom_invite_templates WHERE organizer_id = ?", []any{organizerID}},
 		{"DELETE FROM magic_links WHERE organizer_id = ?", []any{organizerID}},
 		{"DELETE FROM sessions WHERE organizer_id = ?", []any{organizerID}},
 		// finally the organizer row itself

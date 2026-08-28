@@ -9,6 +9,7 @@
 		helper?: string;
 		required?: boolean;
 		disabled?: boolean;
+		maxlength?: number;
 		class?: string;
 		oninput?: (e: Event) => void;
 	}
@@ -23,6 +24,7 @@
 		helper = '',
 		required = false,
 		disabled = false,
+		maxlength,
 		class: className = '',
 		oninput
 	}: Props = $props();
@@ -45,6 +47,7 @@
 		{placeholder}
 		{required}
 		{disabled}
+		{maxlength}
 		{oninput}
 		class="block w-full rounded-md border px-3 py-2 text-sm shadow-sm transition-colors duration-short ease-out focus:outline-none focus:ring-2 focus:ring-offset-0 {error
 			? 'border-error-light text-error placeholder-error-light focus:border-error focus:ring-error'
