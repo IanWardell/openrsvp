@@ -339,6 +339,7 @@
 				eventDate={eventData.eventDate}
 				eventLocation={eventData.location}
 				customData={typeof inviteData.customData === 'string' ? inviteData.customData : JSON.stringify(inviteData.customData || {})}
+				qrTargetUrl={$page.url.origin + '/i/' + token}
 				timezone={eventData.timezone}
 			/>
 		</div>

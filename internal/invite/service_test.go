@@ -39,7 +39,7 @@ func TestListTemplates(t *testing.T) {
 	svc, _ := setupInvite(t)
 
 	templates := svc.ListTemplates()
-	assert.Len(t, templates, 10)
+	assert.Len(t, templates, 11)
 	assert.Equal(t, "balloon-party", templates[0].ID)
 	assert.Equal(t, "confetti", templates[1].ID)
 	assert.Equal(t, "unicorn-magic", templates[2].ID)
@@ -50,6 +50,7 @@ func TestListTemplates(t *testing.T) {
 	assert.Equal(t, "tropical-vibes", templates[7].ID)
 	assert.Equal(t, "vintage-retro", templates[8].ID)
 	assert.Equal(t, "chalkboard", templates[9].ID)
+	assert.Equal(t, "botanical-save-the-date", templates[10].ID)
 }
 
 func TestSaveInviteCard(t *testing.T) {

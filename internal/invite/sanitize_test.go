@@ -102,6 +102,19 @@ func TestSanitizeCustomData_InvalidJSONReturnsEmptyObject(t *testing.T) {
 	}
 }
 
+func TestSanitizeCustomData_ClampsLayoutAndPhotoSettings(t *testing.T) {
+	in := `{"photo":{"fit":"cover","x":-20,"y":140,"zoom":9,"layoutX":-4,"layoutY":96,"size":70},"qr":{"enabled":true,"url":"https://example.com/invite","caption":" Scan me ","foreground":"#112233","background":"#ffffff","x":-8,"y":99,"size":40,"unknown":"drop me too"},"textAreas":{"heading":{"text":"  Garden  ","x":-5,"y":120,"width":2,"fontSize":99,"fontFamily":"Georgia","align":"center"},"unknown":{"text":"drop me"}}}`
+	out := sanitizeCustomData(in)
+	for _, want := range []string{`"x":0`, `"y":100`, `"zoom":2`, `"layoutX":0`, `"layoutY":82`, `"size":50`, `"enabled":true`, `"url":"https://example.com/invite"`, `"caption":"Scan me"`, `"foreground":"#112233"`, `"y":90`, `"size":28`, `"text":"Garden"`, `"width":10`, `"fontSize":64`, `"fontFamily":"Georgia"`, `"align":"center"`} {
+		if !contains(out, want) {
+			t.Fatalf("expected sanitized custom data to contain %q, got %q", want, out)
+		}
+	}
+	if contains(out, "drop me") || contains(out, "drop me too") {
+		t.Fatalf("unexpected unknown text area in sanitized custom data: %q", out)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (len(substr) == 0 || indexOf(s, substr) >= 0)
 }

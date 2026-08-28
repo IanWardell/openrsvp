@@ -24,15 +24,16 @@ import (
 )
 
 // TestIntegration_AllTemplatesRenderableE2E verifies the full lifecycle:
-//   - All 10 templates are available via the API
+//   - All invite templates are available via the API
 //   - Each template can be saved to an invite card
 //   - An image can be uploaded and referenced in customData
 //   - Saving a new image cleans up the old one on disk
 //   - The public preview endpoint returns the correct data
 //
 // This replaces the manual test plan steps:
-//   "start dev, log in, open invite designer, test all 10 templates,
-//    upload image, verify it shows in preview and public invite page"
+//
+//	"start dev, log in, open invite designer, test all invite templates,
+//	 upload image, verify it shows in preview and public invite page"
 func TestIntegration_AllTemplatesRenderableE2E(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	cfg := testutil.TestConfig()
@@ -61,18 +62,18 @@ func TestIntegration_AllTemplatesRenderableE2E(t *testing.T) {
 	handler := NewHandler(svc, authMW, inviteOrgFromCtx(), uploadsDir, makeCheckEventOwner(eventSvc), zerolog.Nop())
 	router := handler.Routes()
 
-	// ── Step 1: Verify all 10 templates are listed ──
-	t.Run("list_all_10_templates", func(t *testing.T) {
+	// ── Step 1: Verify all templates are listed ──
+	t.Run("list_all_templates", func(t *testing.T) {
 		rr := testutil.DoRequest(t, router, "GET", "/templates", nil)
 		assert.Equal(t, http.StatusOK, rr.Code)
 
 		body := testutil.ParseJSON(t, rr)
 		data := body["data"].([]any)
-		assert.Len(t, data, 10, "should have exactly 10 templates")
+		assert.Len(t, data, 11, "should have exactly 11 templates")
 
 		expectedIDs := []string{
 			"balloon-party", "confetti", "unicorn-magic", "superhero", "garden-picnic",
-			"elegant-affair", "clean-minimal", "tropical-vibes", "vintage-retro", "chalkboard",
+			"elegant-affair", "clean-minimal", "tropical-vibes", "vintage-retro", "chalkboard", "botanical-save-the-date",
 		}
 		for i, tmpl := range data {
 			m := tmpl.(map[string]any)
@@ -85,7 +86,7 @@ func TestIntegration_AllTemplatesRenderableE2E(t *testing.T) {
 	// ── Step 2: Save invite with each template ──
 	allTemplates := []string{
 		"balloon-party", "confetti", "unicorn-magic", "superhero", "garden-picnic",
-		"elegant-affair", "clean-minimal", "tropical-vibes", "vintage-retro", "chalkboard",
+		"elegant-affair", "clean-minimal", "tropical-vibes", "vintage-retro", "chalkboard", "botanical-save-the-date",
 	}
 	for _, tmplID := range allTemplates {
 		t.Run("save_template_"+tmplID, func(t *testing.T) {

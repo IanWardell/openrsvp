@@ -52,11 +52,9 @@ func sanitizeFont(f string) string {
 	return ""
 }
 
-// sanitizeCustomData re-encodes the JSON blob with a validated
-// backgroundImage URL: only relative paths starting with / or absolute
-// http(s) URLs are allowed; anything else (data:, javascript:, URLs
-// containing CSS-breakout characters) is dropped. Other custom fields are
-// preserved as-is. If the JSON is invalid, an empty object is returned.
+// sanitizeCustomData re-encodes the JSON blob with validated image URLs,
+// layout values, colors, fonts, and text-area settings. If the JSON is
+// invalid, an empty object is returned.
 func sanitizeCustomData(raw string) string {
 	if raw == "" {
 		return "{}"
@@ -72,11 +70,135 @@ func sanitizeCustomData(raw string) string {
 			data["backgroundImage"] = cleaned
 		}
 	}
+	if qr, ok := data["qr"].(map[string]any); ok {
+		cleanQR := map[string]any{}
+		if enabled, exists := qr["enabled"].(bool); exists {
+			cleanQR["enabled"] = enabled
+		}
+		if value, exists := qr["url"].(string); exists {
+			if cleaned := sanitizeExternalURL(value); cleaned != "" {
+				cleanQR["url"] = cleaned
+			}
+		}
+		for _, key := range []string{"foreground", "background"} {
+			if value, exists := qr[key].(string); exists {
+				if cleaned := sanitizeColor(value); cleaned != "" {
+					cleanQR[key] = cleaned
+				}
+			}
+		}
+		if caption, exists := qr["caption"].(string); exists {
+			cleanQR["caption"] = truncateRunes(strings.TrimSpace(caption), 120)
+		}
+		for _, key := range []string{"x", "y"} {
+			if value, exists := qr[key].(float64); exists {
+				cleanQR[key] = clampFloat(value, 0, 90)
+			}
+		}
+		if value, exists := qr["size"].(float64); exists {
+			cleanQR["size"] = clampFloat(value, 10, 28)
+		}
+		data["qr"] = cleanQR
+	}
+	if photo, ok := data["photo"].(map[string]any); ok {
+		cleanPhoto := map[string]any{}
+		if fit, exists := photo["fit"].(string); exists && (fit == "cover" || fit == "contain") {
+			cleanPhoto["fit"] = fit
+		}
+		for _, key := range []string{"x", "y"} {
+			if value, exists := photo[key].(float64); exists {
+				cleanPhoto[key] = clampFloat(value, 0, 100)
+			}
+		}
+		if value, exists := photo["zoom"].(float64); exists {
+			cleanPhoto["zoom"] = clampFloat(value, 1, 2)
+		}
+		for _, key := range []string{"layoutX", "layoutY"} {
+			if value, exists := photo[key].(float64); exists {
+				cleanPhoto[key] = clampFloat(value, 0, 82)
+			}
+		}
+		if value, exists := photo["size"].(float64); exists {
+			cleanPhoto["size"] = clampFloat(value, 18, 50)
+		}
+		data["photo"] = cleanPhoto
+	}
+	if areas, ok := data["textAreas"].(map[string]any); ok {
+		cleanAreas := map[string]any{}
+		allowedKeys := map[string]bool{
+			"eyebrowLeft": true, "eyebrowRight": true, "heading": true, "body": true,
+			"eventDate": true, "eventLocation": true, "footer": true,
+		}
+		for key, rawArea := range areas {
+			if !allowedKeys[key] {
+				continue
+			}
+			area, ok := rawArea.(map[string]any)
+			if !ok {
+				continue
+			}
+			cleanArea := map[string]any{}
+			if text, exists := area["text"].(string); exists {
+				cleanArea["text"] = truncateRunes(strings.TrimSpace(text), 500)
+			}
+			for _, axis := range []string{"x", "y"} {
+				if value, exists := area[axis].(float64); exists {
+					cleanArea[axis] = clampFloat(value, 0, 92)
+				}
+			}
+			if value, exists := area["width"].(float64); exists {
+				cleanArea["width"] = clampFloat(value, 10, 90)
+			}
+			if value, exists := area["fontSize"].(float64); exists {
+				cleanArea["fontSize"] = clampFloat(value, 8, 64)
+			}
+			if family, exists := area["fontFamily"].(string); exists {
+				if cleaned := sanitizeFont(family); cleaned != "" {
+					cleanArea["fontFamily"] = cleaned
+				}
+			}
+			if align, exists := area["align"].(string); exists && (align == "left" || align == "center" || align == "right") {
+				cleanArea["align"] = align
+			}
+			cleanAreas[key] = cleanArea
+		}
+		data["textAreas"] = cleanAreas
+	}
 	out, err := json.Marshal(data)
 	if err != nil {
 		return "{}"
 	}
 	return string(out)
+}
+
+func clampFloat(value, min, max float64) float64 {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+func truncateRunes(value string, max int) string {
+	runes := []rune(value)
+	if len(runes) > max {
+		runes = runes[:max]
+	}
+	return string(runes)
+}
+
+func sanitizeExternalURL(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" || strings.ContainsAny(s, "<>\\\"'") {
+		return ""
+	}
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ""
+	}
+	return s
 }
 
 func sanitizeBackgroundURL(raw string) string {
@@ -114,6 +236,7 @@ var builtInTemplates = []*Template{
 	{ID: "tropical-vibes", Name: "Tropical Vibes", Description: "Warm colors and wave decorations for a beachy, tropical event."},
 	{ID: "vintage-retro", Name: "Vintage Retro", Description: "Double border, uppercase heading, and sepia tones for a classic vibe."},
 	{ID: "chalkboard", Name: "Chalkboard", Description: "Dark background with chalk-style text for a cozy, handwritten feel."},
+	{ID: "botanical-save-the-date", Name: "Botanical Save the Date", Description: "An animated envelope reveal with botanical artwork, photo, and QR code."},
 }
 
 // Service contains the business logic for invite card management.

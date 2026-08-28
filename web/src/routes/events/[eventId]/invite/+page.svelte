@@ -23,6 +23,7 @@
 
 	// Template selection
 	let selectedTemplate = $state('balloon-party');
+	let templatePickerOpen = $state(true);
 
 	// Customization fields
 	let heading = $state('You\'re Invited!');
@@ -31,6 +32,54 @@
 	let primaryColor = $state('#4F46E5');
 	let secondaryColor = $state('#EC4899');
 	let font = $state('Inter');
+	let qrEnabled = $state(true);
+	let qrUrl = $state('');
+	let qrCaption = $state('Scan for details');
+	let qrForeground = $state('#1c1917');
+	let qrBackground = $state('#ffffff');
+	let photoFit = $state('cover');
+	let photoPositionX = $state(50);
+	let photoPositionY = $state(50);
+	let photoZoom = $state(1);
+	let photoLayoutX = $state(60);
+	let photoLayoutY = $state(15);
+	let photoSize = $state(35);
+	let qrLayoutX = $state(79);
+	let qrLayoutY = $state(70);
+	let qrSize = $state(17);
+
+	type TextAreaKey = 'eyebrowLeft' | 'eyebrowRight' | 'heading' | 'body' | 'eventDate' | 'eventLocation' | 'footer';
+	type EditorElementKey = TextAreaKey | 'photo' | 'qr';
+	type TextAreaState = {
+		text: string;
+		x: number;
+		y: number;
+		width: number;
+		fontSize: number;
+		fontFamily: string;
+		align: 'left' | 'center' | 'right';
+	};
+
+	const textAreaFields: Array<{ key: TextAreaKey; label: string; multiline?: boolean }> = [
+		{ key: 'eyebrowLeft', label: 'Top-left label' },
+		{ key: 'eyebrowRight', label: 'Top-right label' },
+		{ key: 'heading', label: 'Heading' },
+		{ key: 'body', label: 'Body text', multiline: true },
+		{ key: 'eventDate', label: 'Event date' },
+		{ key: 'eventLocation', label: 'Event location' },
+		{ key: 'footer', label: 'Footer text', multiline: true }
+	];
+	let activeElement = $state<EditorElementKey>('heading');
+
+	let textAreas = $state<Record<TextAreaKey, TextAreaState>>({
+		eyebrowLeft: { text: 'SAVE THE DATE', x: 7, y: 8, width: 34, fontSize: 8, fontFamily: 'Arial', align: 'left' },
+		eyebrowRight: { text: 'FORMAL INVITATION TO FOLLOW', x: 57, y: 8, width: 36, fontSize: 8, fontFamily: 'Arial', align: 'right' },
+		heading: { text: "You're Invited!", x: 6, y: 20, width: 52, fontSize: 25, fontFamily: 'Georgia', align: 'center' },
+		body: { text: 'Join us for a wonderful celebration.', x: 7, y: 47, width: 50, fontSize: 10, fontFamily: 'Arial', align: 'center' },
+		eventDate: { text: '', x: 7, y: 63, width: 50, fontSize: 9, fontFamily: 'Arial', align: 'left' },
+		eventLocation: { text: '', x: 7, y: 73, width: 50, fontSize: 9, fontFamily: 'Arial', align: 'left' },
+		footer: { text: 'We hope to see you there!', x: 7, y: 83, width: 50, fontSize: 8, fontFamily: 'Georgia', align: 'left' }
+	});
 
 	// Background image
 	let backgroundImageUrl = $state('');
@@ -96,6 +145,12 @@
 			name: 'Chalkboard',
 			description: 'Dark and handwritten',
 			emoji: '\u{270D}'
+		},
+		{
+			id: 'botanical-save-the-date',
+			name: 'Botanical Save the Date',
+			description: 'Animated envelope, photo, and QR code',
+			emoji: '\u{1F33F}'
 		}
 	];
 
@@ -106,12 +161,54 @@
 		{ value: 'Comic Sans MS', label: 'Comic Sans (Fun)' },
 		{ value: 'Arial', label: 'Arial (Clean)' }
 	];
-
-	const customDataJSON = $derived(
-		backgroundImageUrl
-			? JSON.stringify({ backgroundImage: backgroundImageUrl })
-			: '{}'
+	const photoFitOptions = [
+		{ value: 'cover', label: 'Fill circle (crop)' },
+		{ value: 'contain', label: 'Show full image' }
+	];
+	const selectedTemplateDetails = $derived(
+		templates.find((template) => template.id === selectedTemplate) || templates[0]
 	);
+	const activeTextArea = $derived(
+		textAreaFields.some((area) => area.key === activeElement) ? activeElement as TextAreaKey : null
+	);
+	const activeTextAreaField = $derived(
+		textAreaFields.find((area) => area.key === activeTextArea) || textAreaFields[0]
+	);
+
+	const previewHeading = $derived(selectedTemplate === 'botanical-save-the-date' ? textAreas.heading.text : heading);
+	const previewBody = $derived(selectedTemplate === 'botanical-save-the-date' ? textAreas.body.text : body);
+	const previewFooter = $derived(selectedTemplate === 'botanical-save-the-date' ? textAreas.footer.text : footer);
+	const customTextAreas = $derived(Object.fromEntries(
+		textAreaFields.map(({ key }) => [key, textAreas[key]])
+	));
+
+	const customDataJSON = $derived(JSON.stringify({
+		...(backgroundImageUrl ? { backgroundImage: backgroundImageUrl } : {}),
+		...(selectedTemplate === 'botanical-save-the-date'
+			? {
+					textAreas: customTextAreas,
+					photo: {
+						fit: photoFit,
+						x: photoPositionX,
+						y: photoPositionY,
+						zoom: photoZoom,
+						layoutX: photoLayoutX,
+						layoutY: photoLayoutY,
+						size: photoSize
+					},
+					qr: {
+						enabled: qrEnabled,
+						...(qrUrl.trim() ? { url: qrUrl.trim() } : {}),
+						caption: qrCaption.trim(),
+						foreground: qrForeground,
+						background: qrBackground,
+						x: qrLayoutX,
+						y: qrLayoutY,
+						size: qrSize
+					}
+				}
+			: {})
+	}));
 
 	onMount(async () => {
 		try {
@@ -130,6 +227,12 @@
 				primaryColor = invite.primaryColor || primaryColor;
 				secondaryColor = invite.secondaryColor || secondaryColor;
 				font = invite.font || font;
+				templatePickerOpen = false;
+				textAreas.heading.text = invite.heading || textAreas.heading.text;
+				textAreas.body.text = invite.body || textAreas.body.text;
+				textAreas.footer.text = invite.footer || textAreas.footer.text;
+				textAreas.eventDate.text = eventResult.data.eventDate ? formatDateForEditor(eventResult.data.eventDate) : '';
+				textAreas.eventLocation.text = eventResult.data.location || '';
 
 				// Load existing background image from customData
 				try {
@@ -138,6 +241,39 @@
 						: invite.customData || {};
 					if (cd.backgroundImage) {
 						backgroundImageUrl = cd.backgroundImage;
+					}
+					if (cd.qr && typeof cd.qr === 'object') {
+						qrEnabled = cd.qr.enabled !== false;
+						qrUrl = typeof cd.qr.url === 'string' ? cd.qr.url : '';
+						qrCaption = typeof cd.qr.caption === 'string' ? cd.qr.caption : qrCaption;
+						qrForeground = typeof cd.qr.foreground === 'string' ? cd.qr.foreground : qrForeground;
+						qrBackground = typeof cd.qr.background === 'string' ? cd.qr.background : qrBackground;
+						qrLayoutX = typeof cd.qr.x === 'number' ? cd.qr.x : qrLayoutX;
+						qrLayoutY = typeof cd.qr.y === 'number' ? cd.qr.y : qrLayoutY;
+						qrSize = typeof cd.qr.size === 'number' ? cd.qr.size : qrSize;
+					}
+					if (cd.photo && typeof cd.photo === 'object') {
+						photoFit = cd.photo.fit === 'contain' ? 'contain' : photoFit;
+						photoPositionX = typeof cd.photo.x === 'number' ? cd.photo.x : photoPositionX;
+						photoPositionY = typeof cd.photo.y === 'number' ? cd.photo.y : photoPositionY;
+						photoZoom = typeof cd.photo.zoom === 'number' ? cd.photo.zoom : photoZoom;
+						photoLayoutX = typeof cd.photo.layoutX === 'number' ? cd.photo.layoutX : photoLayoutX;
+						photoLayoutY = typeof cd.photo.layoutY === 'number' ? cd.photo.layoutY : photoLayoutY;
+						photoSize = typeof cd.photo.size === 'number' ? cd.photo.size : photoSize;
+					}
+					if (cd.textAreas && typeof cd.textAreas === 'object') {
+						for (const field of textAreaFields) {
+							const savedArea = cd.textAreas[field.key];
+							if (!savedArea || typeof savedArea !== 'object') continue;
+							const target = textAreas[field.key];
+							if (typeof savedArea.text === 'string') target.text = savedArea.text;
+							if (typeof savedArea.x === 'number') target.x = savedArea.x;
+							if (typeof savedArea.y === 'number') target.y = savedArea.y;
+							if (typeof savedArea.width === 'number') target.width = savedArea.width;
+							if (typeof savedArea.fontSize === 'number') target.fontSize = savedArea.fontSize;
+							if (typeof savedArea.fontFamily === 'string') target.fontFamily = savedArea.fontFamily;
+							if (savedArea.align === 'left' || savedArea.align === 'center' || savedArea.align === 'right') target.align = savedArea.align;
+						}
 					}
 				} catch {
 					// ignore parse errors
@@ -156,9 +292,9 @@
 		try {
 			await api.put(`/invite/event/${eventId}`, {
 				templateId: selectedTemplate,
-				heading,
-				body,
-				footer,
+				heading: previewHeading,
+				body: previewBody,
+				footer: previewFooter,
 				primaryColor,
 				secondaryColor,
 				font,
@@ -171,6 +307,47 @@
 			toast.error(apiErr.message || 'Failed to save invite design');
 		} finally {
 			saving = false;
+		}
+	}
+
+	function formatDateForEditor(dateStr: string): string {
+		if (!dateStr) return '';
+		const date = new Date(dateStr);
+		return Number.isNaN(date.getTime()) ? dateStr : date.toLocaleDateString('en-US', {
+			weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+		});
+	}
+
+	function selectTemplate(templateId: string) {
+		if (templateId === 'botanical-save-the-date') {
+			textAreas.heading.text = heading || textAreas.heading.text;
+			textAreas.body.text = body || textAreas.body.text;
+			textAreas.footer.text = footer || textAreas.footer.text;
+			textAreas.eventDate.text ||= event?.eventDate ? formatDateForEditor(event.eventDate) : '';
+			textAreas.eventLocation.text ||= event?.location || '';
+		} else if (selectedTemplate === 'botanical-save-the-date') {
+			heading = textAreas.heading.text;
+			body = textAreas.body.text;
+			footer = textAreas.footer.text;
+		}
+		selectedTemplate = templateId;
+		templatePickerOpen = false;
+	}
+
+	function selectEditorElement(element: EditorElementKey) {
+		activeElement = element;
+	}
+
+	function moveEditorElement(element: EditorElementKey, x: number, y: number) {
+		if (element === 'photo') {
+			photoLayoutX = x;
+			photoLayoutY = y;
+		} else if (element === 'qr') {
+			qrLayoutX = x;
+			qrLayoutY = y;
+		} else {
+			textAreas[element].x = x;
+			textAreas[element].y = y;
 		}
 	}
 
@@ -263,24 +440,57 @@
 				<!-- Template picker -->
 				<Card>
 					{#snippet header()}
-						<h2 class="text-lg font-semibold font-display text-neutral-900">Choose a Template</h2>
+						<button
+							type="button"
+							class="flex w-full items-center justify-between gap-4 text-left"
+							onclick={() => (templatePickerOpen = !templatePickerOpen)}
+							aria-expanded={templatePickerOpen}
+						>
+							<span>
+								<span class="block text-lg font-semibold font-display text-neutral-900">
+									{templatePickerOpen ? 'Choose a Template' : 'Template'}
+								</span>
+								{#if !templatePickerOpen}
+									<span class="mt-1 flex items-center gap-2 text-sm text-neutral-600">
+										<span aria-hidden="true">{selectedTemplateDetails.emoji}</span>
+										{selectedTemplateDetails.name}
+									</span>
+								{/if}
+							</span>
+							<span class="inline-flex items-center gap-2 text-xs font-semibold text-primary">
+								{templatePickerOpen ? 'Hide templates' : 'Change template'}
+								<svg class="h-4 w-4 transition-transform {templatePickerOpen ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+								</svg>
+							</span>
+						</button>
 					{/snippet}
 
-					<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-						{#each templates as template}
-							<button
-								type="button"
-								class="relative rounded-lg border-2 p-3 text-center transition-all {selectedTemplate === template.id
-									? 'border-primary ring-2 ring-primary-light'
-									: 'border-neutral-200 hover:border-neutral-300'}"
-								onclick={() => (selectedTemplate = template.id)}
-							>
-								<div class="text-2xl mb-1">{template.emoji}</div>
-								<p class="text-xs font-medium text-neutral-900">{template.name}</p>
-								<p class="text-xs text-neutral-500 mt-0.5">{template.description}</p>
-							</button>
-						{/each}
-					</div>
+					{#if templatePickerOpen}
+						<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+							{#each templates as template}
+								<button
+									type="button"
+									class="relative rounded-lg border-2 p-3 text-center transition-all {selectedTemplate === template.id
+										? 'border-primary bg-primary-lighter ring-2 ring-primary-light'
+										: 'border-neutral-200 hover:border-primary-light hover:bg-neutral-50'}"
+									onclick={() => selectTemplate(template.id)}
+								>
+									<div class="text-2xl mb-1">{template.emoji}</div>
+									<p class="text-xs font-medium text-neutral-900">{template.name}</p>
+									<p class="text-xs text-neutral-500 mt-0.5">{template.description}</p>
+								</button>
+							{/each}
+						</div>
+					{:else}
+						<div class="flex items-center gap-3 rounded-lg bg-neutral-50 px-4 py-3">
+							<span class="text-2xl" aria-hidden="true">{selectedTemplateDetails.emoji}</span>
+							<div class="min-w-0">
+								<p class="text-sm font-semibold text-neutral-900">{selectedTemplateDetails.name}</p>
+								<p class="text-xs text-neutral-500">{selectedTemplateDetails.description}</p>
+							</div>
+						</div>
+					{/if}
 				</Card>
 
 				<!-- Customization form -->
@@ -290,17 +500,119 @@
 					{/snippet}
 
 					<div class="space-y-4">
-						<Input label="Heading" name="heading" bind:value={heading} placeholder="You're Invited!" />
+						{#if selectedTemplate === 'botanical-save-the-date'}
+							<div class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 space-y-4">
+								<div>
+									<p class="text-sm font-semibold text-neutral-900">Selected element</p>
+									<p class="text-xs text-neutral-500">Click an object on the preview or choose it here. Drag selected objects directly on the card.</p>
+								</div>
+								<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+									{#each textAreaFields as area}
+										<button
+											type="button"
+										class="rounded-md border px-3 py-2 text-left text-xs font-medium transition-colors {activeElement === area.key
+											? 'border-primary bg-primary-lighter text-primary'
+											: 'border-neutral-200 bg-surface text-neutral-600 hover:border-primary-light'}"
+										onclick={() => selectEditorElement(area.key)}
+										aria-pressed={activeElement === area.key}
+										>
+										{area.label}
+									</button>
+									{/each}
+									{#each [{ key: 'photo', label: 'Photo' }, { key: 'qr', label: 'QR code' }] as object}
+										<button
+											type="button"
+											class="rounded-md border px-3 py-2 text-left text-xs font-medium transition-colors {activeElement === object.key
+												? 'border-primary bg-primary-lighter text-primary'
+												: 'border-neutral-200 bg-surface text-neutral-600 hover:border-primary-light'}"
+											onclick={() => selectEditorElement(object.key as EditorElementKey)}
+											aria-pressed={activeElement === object.key}
+										>{object.label}</button>
+									{/each}
+								</div>
 
-						<Textarea
-							label="Body Text"
-							name="body"
-							bind:value={body}
-							placeholder="Join us for a wonderful celebration..."
-							rows={3}
-						/>
+								{#if activeTextArea}
+									<div class="rounded-lg border border-neutral-200 bg-surface p-4 space-y-4">
+									{#if activeTextAreaField.multiline}
+										<Textarea label={activeTextAreaField.label} name={`text-${activeTextArea}`} bind:value={textAreas[activeTextArea].text} rows={2} />
+									{:else}
+										<Input label={activeTextAreaField.label} name={`text-${activeTextArea}`} bind:value={textAreas[activeTextArea].text} />
+									{/if}
 
-						<Input label="Footer Text" name="footer" bind:value={footer} placeholder="We hope to see you there!" />
+									<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+										<Select label="Font" name={`font-${activeTextArea}`} bind:value={textAreas[activeTextArea].fontFamily} options={fontOptions} />
+										<div class="space-y-1">
+											<label for={`size-${activeTextArea}`} class="block text-xs font-medium text-neutral-600">Font size: {Math.round(textAreas[activeTextArea].fontSize)}px</label>
+											<input id={`size-${activeTextArea}`} type="range" min="8" max="64" step="1" bind:value={textAreas[activeTextArea].fontSize} class="w-full accent-primary" />
+										</div>
+									</div>
+
+									<div class="space-y-2">
+										<p class="text-xs font-medium text-neutral-600">Text alignment</p>
+										<div class="grid grid-cols-3 rounded-md border border-neutral-200 bg-neutral-50 p-1">
+											{#each ['left', 'center', 'right'] as alignment}
+												<button
+													type="button"
+													class="rounded px-2 py-1.5 text-xs font-medium capitalize transition-colors {textAreas[activeTextArea].align === alignment ? 'bg-surface text-primary shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}"
+													onclick={() => (textAreas[activeTextArea].align = alignment as TextAreaState['align'])}
+												>
+													{alignment}
+												</button>
+											{/each}
+										</div>
+									</div>
+
+									<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+										<div class="space-y-1">
+											<label for={`x-${activeTextArea}`} class="block text-xs font-medium text-neutral-600">Horizontal: {Math.round(textAreas[activeTextArea].x)}%</label>
+											<input id={`x-${activeTextArea}`} type="range" min="0" max="90" step="1" bind:value={textAreas[activeTextArea].x} class="w-full accent-primary" />
+										</div>
+										<div class="space-y-1">
+											<label for={`y-${activeTextArea}`} class="block text-xs font-medium text-neutral-600">Vertical: {Math.round(textAreas[activeTextArea].y)}%</label>
+											<input id={`y-${activeTextArea}`} type="range" min="0" max="92" step="1" bind:value={textAreas[activeTextArea].y} class="w-full accent-primary" />
+										</div>
+									</div>
+									<div class="space-y-1">
+										<label for={`width-${activeTextArea}`} class="block text-xs font-medium text-neutral-600">Text box width: {Math.round(textAreas[activeTextArea].width)}%</label>
+										<input id={`width-${activeTextArea}`} type="range" min="10" max="90" step="1" bind:value={textAreas[activeTextArea].width} class="w-full accent-primary" />
+									</div>
+									</div>
+								{:else if activeElement === 'photo'}
+									<div class="rounded-lg border border-primary-light bg-surface p-4 space-y-3">
+										<div>
+											<p class="text-sm font-semibold text-neutral-900">Photo position</p>
+											<p class="text-xs text-neutral-500">Drag the circular photo on the preview or fine-tune it here.</p>
+										</div>
+										<div class="grid grid-cols-2 gap-3">
+											<div class="space-y-1"><label for="photoLayoutX" class="block text-xs font-medium text-neutral-600">Horizontal: {Math.round(photoLayoutX)}%</label><input id="photoLayoutX" type="range" min="0" max={100 - photoSize} step="1" bind:value={photoLayoutX} class="w-full accent-primary" /></div>
+											<div class="space-y-1"><label for="photoLayoutY" class="block text-xs font-medium text-neutral-600">Vertical: {Math.round(photoLayoutY)}%</label><input id="photoLayoutY" type="range" min="0" max={100 - photoSize} step="1" bind:value={photoLayoutY} class="w-full accent-primary" /></div>
+										</div>
+										<div class="space-y-1"><label for="photoSize" class="block text-xs font-medium text-neutral-600">Size: {Math.round(photoSize)}%</label><input id="photoSize" type="range" min="18" max="50" step="1" bind:value={photoSize} class="w-full accent-primary" /></div>
+									</div>
+								{:else}
+									<div class="rounded-lg border border-primary-light bg-surface p-4 space-y-3">
+										<div><p class="text-sm font-semibold text-neutral-900">QR code position</p><p class="text-xs text-neutral-500">Drag the QR block on the preview or fine-tune it here.</p></div>
+										<div class="grid grid-cols-2 gap-3">
+											<div class="space-y-1"><label for="qrLayoutX" class="block text-xs font-medium text-neutral-600">Horizontal: {Math.round(qrLayoutX)}%</label><input id="qrLayoutX" type="range" min="0" max={100 - qrSize} step="1" bind:value={qrLayoutX} class="w-full accent-primary" /></div>
+											<div class="space-y-1"><label for="qrLayoutY" class="block text-xs font-medium text-neutral-600">Vertical: {Math.round(qrLayoutY)}%</label><input id="qrLayoutY" type="range" min="0" max={100 - qrSize} step="1" bind:value={qrLayoutY} class="w-full accent-primary" /></div>
+										</div>
+										<div class="space-y-1"><label for="qrSize" class="block text-xs font-medium text-neutral-600">Size: {Math.round(qrSize)}%</label><input id="qrSize" type="range" min="10" max="28" step="1" bind:value={qrSize} class="w-full accent-primary" /></div>
+									</div>
+								{/if}
+							</div>
+						{:else}
+							<Input label="Heading" name="heading" bind:value={heading} placeholder="You're Invited!" />
+
+							<Textarea
+								label="Body Text"
+								name="body"
+								bind:value={body}
+								placeholder="Join us for a wonderful celebration..."
+								rows={3}
+							/>
+
+							<Input label="Footer Text" name="footer" bind:value={footer} placeholder="We hope to see you there!" />
+						{/if}
 
 						<div class="grid grid-cols-2 gap-4">
 							<div class="space-y-1">
@@ -325,9 +637,42 @@
 
 						<Select label="Font" name="font" bind:value={font} options={fontOptions} />
 
+						{#if selectedTemplate === 'botanical-save-the-date' && activeElement === 'qr'}
+							<div class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 space-y-3">
+								<div class="flex items-center justify-between gap-3">
+									<div>
+										<p class="text-sm font-medium text-neutral-700">QR code</p>
+										<p class="text-xs text-neutral-500">By default it opens this event’s invitation.</p>
+									</div>
+									<label class="inline-flex items-center gap-2 text-sm text-neutral-700">
+										<input type="checkbox" bind:checked={qrEnabled} class="h-4 w-4 rounded border-neutral-300 text-primary focus:ring-primary" />
+										Show QR
+									</label>
+								</div>
+								<Input label="Custom QR URL (optional)" name="qrUrl" bind:value={qrUrl} placeholder="https://example.com/details" />
+								<Input label="QR caption" name="qrCaption" bind:value={qrCaption} placeholder="Scan for details" />
+								<div class="grid grid-cols-2 gap-3">
+									<div class="space-y-1">
+										<label for="qrForeground" class="block text-xs font-medium text-neutral-600">QR ink</label>
+										<input id="qrForeground" type="color" bind:value={qrForeground} class="h-9 w-full rounded border border-neutral-300 cursor-pointer" />
+									</div>
+									<div class="space-y-1">
+										<label for="qrBackground" class="block text-xs font-medium text-neutral-600">QR paper</label>
+										<input id="qrBackground" type="color" bind:value={qrBackground} class="h-9 w-full rounded border border-neutral-300 cursor-pointer" />
+									</div>
+								</div>
+							</div>
+						{/if}
+
 						<!-- Background Image Upload -->
+						{#if selectedTemplate !== 'botanical-save-the-date' || activeElement === 'photo'}
 						<div class="space-y-2">
-							<label for="bg-image-input" class="block text-sm font-medium text-neutral-700">Background Image</label>
+							<label for="bg-image-input" class="block text-sm font-medium text-neutral-700">
+								{selectedTemplate === 'botanical-save-the-date' ? 'Feature photo' : 'Background Image'}
+							</label>
+							{#if selectedTemplate === 'botanical-save-the-date'}
+								<p class="text-xs text-neutral-500">Shown as the circular artwork on the invitation card.</p>
+							{/if}
 							{#if backgroundImageUrl}
 								<div class="relative rounded-lg border border-neutral-200 overflow-hidden">
 									<img src={backgroundImageUrl} alt="Background preview" class="w-full h-24 object-cover" />
@@ -373,6 +718,31 @@
 								</div>
 							{/if}
 						</div>
+						{/if}
+
+						{#if selectedTemplate === 'botanical-save-the-date' && activeElement === 'photo' && backgroundImageUrl}
+							<div class="rounded-lg border border-neutral-200 bg-neutral-50 p-4 space-y-3">
+								<div>
+									<p class="text-sm font-medium text-neutral-700">Circular photo crop</p>
+									<p class="text-xs text-neutral-500">Choose whether to fill the circle and adjust the focal point and zoom.</p>
+								</div>
+								<Select label="Crop style" name="photoFit" bind:value={photoFit} options={photoFitOptions} />
+								<div class="grid grid-cols-2 gap-3">
+									<div class="space-y-1">
+										<label for="photoPositionX" class="block text-xs font-medium text-neutral-600">Focal point X: {Math.round(photoPositionX)}%</label>
+										<input id="photoPositionX" type="range" min="0" max="100" step="1" bind:value={photoPositionX} class="w-full accent-primary" />
+									</div>
+									<div class="space-y-1">
+										<label for="photoPositionY" class="block text-xs font-medium text-neutral-600">Focal point Y: {Math.round(photoPositionY)}%</label>
+										<input id="photoPositionY" type="range" min="0" max="100" step="1" bind:value={photoPositionY} class="w-full accent-primary" />
+									</div>
+								</div>
+								<div class="space-y-1">
+									<label for="photoZoom" class="block text-xs font-medium text-neutral-600">Zoom: {Number(photoZoom).toFixed(2)}x</label>
+									<input id="photoZoom" type="range" min="1" max="2" step="0.05" bind:value={photoZoom} class="w-full accent-primary" />
+								</div>
+							</div>
+						{/if}
 					</div>
 				</Card>
 
@@ -408,9 +778,9 @@
 					<h2 class="text-lg font-semibold font-display text-neutral-900 mb-4">Preview</h2>
 					<InviteCardPreview
 						templateId={selectedTemplate}
-						{heading}
-						{body}
-						{footer}
+						heading={previewHeading}
+						body={previewBody}
+						footer={previewFooter}
 						{primaryColor}
 						{secondaryColor}
 						{font}
@@ -418,7 +788,12 @@
 						eventDate={event?.eventDate || ''}
 						eventLocation={event?.location || ''}
 						customData={customDataJSON}
+						qrTargetUrl={$page.url.origin + '/i/' + (event?.shareToken || '')}
 						timezone={event?.timezone}
+						editable={selectedTemplate === 'botanical-save-the-date'}
+						selectedElement={activeElement}
+						onselectelement={selectEditorElement}
+						onmoveelement={moveEditorElement}
 					/>
 				</div>
 			</div>

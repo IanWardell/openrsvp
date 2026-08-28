@@ -1,4 +1,7 @@
 <script lang="ts">
+	import BotanicalInvite from './BotanicalInvite.svelte';
+	type EditorElementKey = 'eyebrowLeft' | 'eyebrowRight' | 'heading' | 'body' | 'eventDate' | 'eventLocation' | 'footer' | 'photo' | 'qr';
+
 	interface Props {
 		templateId: string;
 		heading: string;
@@ -11,7 +14,12 @@
 		eventDate: string;
 		eventLocation: string;
 		customData?: string;
+		qrTargetUrl?: string;
 		timezone?: string;
+		editable?: boolean;
+		selectedElement?: EditorElementKey | '';
+		onselectelement?: (element: EditorElementKey) => void;
+		onmoveelement?: (element: EditorElementKey, x: number, y: number) => void;
 	}
 
 	let {
@@ -26,7 +34,12 @@
 		eventDate,
 		eventLocation,
 		customData = '{}',
-		timezone
+		qrTargetUrl = '',
+		timezone,
+		editable = false,
+		selectedElement = '',
+		onselectelement,
+		onmoveelement
 	}: Props = $props();
 
 	const parsedCustomData = $derived.by(() => {
@@ -187,6 +200,26 @@
 	}
 </script>
 
+{#if templateId === 'botanical-save-the-date'}
+	<BotanicalInvite
+		{heading}
+		{body}
+		{footer}
+		{primaryColor}
+		{secondaryColor}
+		{font}
+		{eventTitle}
+		{eventDate}
+		{eventLocation}
+		{customData}
+		{qrTargetUrl}
+		{timezone}
+		{editable}
+		{selectedElement}
+		{onselectelement}
+		{onmoveelement}
+	/>
+{:else}
 <div
 	class="invite-card {templateConfig.wrapperClass}"
 	style="
@@ -338,6 +371,7 @@
 		</div>
 	{/if}
 </div>
+{/if}
 
 <style>
 	.invite-card {
