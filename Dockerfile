@@ -11,7 +11,7 @@ RUN npm run build
 # escaper bypass, net/mail quadratic concat, net/http2 frame infinite loop).
 # go.mod's go directive expresses minimum source compatibility, not the
 # toolchain we build with.
-FROM golang:1.26-alpine AS backend
+FROM golang:1.27-alpine AS backend
 RUN apk add --no-cache gcc musl-dev
 WORKDIR /app
 COPY go.mod go.sum ./
