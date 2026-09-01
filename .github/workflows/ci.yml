@@ -113,7 +113,7 @@ jobs:
         # and type-check the go1.26 codebase cleanly (the old go/types panic on
         # v2.1.0 is gone). Findings fail the build; see .golangci.yml for the
         # enabled linters and the documented pre-existing burn-down allow-list.
-        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.12.2
 
@@ -149,7 +149,7 @@ jobs:
     needs: [frontend, backend, backend-postgres, lint, govulncheck]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
